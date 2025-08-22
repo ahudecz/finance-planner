@@ -410,9 +410,33 @@ class AuthService {
 
       if (error || !data) {
         console.error("Error fetching user profile:", error);
+        
+        // Try to create a basic profile if it doesn't exist
+        const user = await supabase.auth.getUser();
+        if (user.data.user) {
+          await this.createUserProfile(userId, {
+            email: user.data.user.email!,
+            fullName: user.data.user.user_metadata?.full_name || null,
+            role: "viewer",
+            organizationId: undefined,
+            isActive: true
+          });
+          
+          // Try fetching again
+          const { data: newData, error: newError } = await supabase
+            .from("user_profiles")
+            .select("*")
+            .eq("id", userId)
+            .single();
+            
+          if (newData) {
+            return this.transformProfileFromDB(newData);
+          }
+        }
+        
         return null;
       }
-
+      
       return this.transformProfileFromDB(data);
 
     } catch (error) {

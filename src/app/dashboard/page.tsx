@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Search, Download, FileText, Sheet } from "lucide-react";
+import { Search, Download, FileText, Sheet, LogOut } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { InfoCards } from "@/components/InfoCards";
 import { ChatInterface } from "@/components/ChatInterface";
@@ -13,6 +14,9 @@ import { Charts } from "@/components/Charts";
 import { processIdeaSubmission, type DashboardData } from "@/lib/services/dashboardService";
 import { exportDashboardSummary } from "@/lib/services/exportService";
 import { PermissionWrapper } from "@/components/PermissionWrapper";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { useAuth } from "@/lib/services/authService";
+import { AIAnalysisProgress } from "@/lib/services/aiService";
 
 export default function DashboardPage() {
   const [dashboardData, setDashboardData] = useState<DashboardData>({
@@ -24,6 +28,15 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [isExporting, setIsExporting] = useState(false);
+  const [aiAnalysisResults, setAiAnalysisResults] = useState<AIAnalysisProgress | null>(null);
+  
+  const { signOut, profile } = useAuth();
+  const router = useRouter();
+
+  const handleSignOut = async () => {
+    await signOut();
+    router.push("/auth/login");
+  };
 
   // Load dashboard data from API
   useEffect(() => {
@@ -77,14 +90,36 @@ export default function DashboardPage() {
           const updatedData = await response.json();
           setDashboardData(updatedData);
         }
-        
-        // TODO: Generate risks for the new idea
-        // TODO: Calculate updated budget estimates
       } else {
         console.error("❌ Failed to process idea:", result.message);
       }
     } catch (error) {
       console.error("❌ Error processing idea submission:", error);
+    }
+  };
+
+  const handleAnalysisComplete = async (results: AIAnalysisProgress) => {
+    console.log("🎯 AI Analysis completed:", results);
+    
+    setAiAnalysisResults(results);
+    
+    // Update dashboard data with AI analysis results
+    if (results.isComplete && results.results.budget && results.results.timeline) {
+      const budgetData = results.results.budget.data;
+      const timelineData = results.results.timeline.data;
+      
+      const updatedDashboardData = {
+        ...dashboardData,
+        capex: budgetData?.capex?.total || dashboardData.capex,
+        opex: budgetData?.opex?.monthly || dashboardData.opex,
+        timeline: timelineData?.total_duration_weeks || dashboardData.timeline,
+        savings: budgetData?.roi_projection?.year_3_roi ? 
+          Math.round((budgetData.total_investment * budgetData.roi_projection.year_3_roi) / 100) : 
+          dashboardData.savings
+      };
+      
+      setDashboardData(updatedDashboardData);
+      console.log("📊 Dashboard updated with AI analysis data");
     }
   };
 
@@ -111,12 +146,13 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      {/* Sidebar */}
-      <Sidebar />
-      
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+    <ProtectedRoute requireAuth>
+      <div className="flex h-screen bg-gray-50">
+        {/* Sidebar */}
+        <Sidebar />
+        
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
         <header className="bg-white border-b border-gray-200 px-6 py-4">
           <div className="flex items-center justify-between">
@@ -160,6 +196,18 @@ export default function DashboardPage() {
                   className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-64"
                 />
               </div>
+
+              <div className="flex items-center space-x-2 text-sm text-gray-600">
+                <span>Welcome, {profile?.fullName || profile?.email}</span>
+                <span className="px-2 py-1 bg-gray-100 rounded text-xs">{profile?.role}</span>
+                <button
+                  onClick={handleSignOut}
+                  className="flex items-center space-x-1 px-2 py-1 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>Sign Out</span>
+                </button>
+              </div>
             </div>
           </div>
         </header>
@@ -200,9 +248,12 @@ export default function DashboardPage() {
                 className="lg:col-span-2"
               >
                 <div className="grid grid-cols-1 gap-6">
-                  {/* Chat Interface */}
-                  <div className="h-96">
-                    <ChatInterface onIdeaSubmit={handleIdeaSubmit} />
+                  {/* Chat Interface with AI Agent */}
+                  <div>
+                    <ChatInterface 
+                      onIdeaSubmit={handleIdeaSubmit}
+                      onAnalysisComplete={handleAnalysisComplete}
+                    />
                   </div>
                   
                   {/* Charts Row */}
@@ -242,5 +293,6 @@ export default function DashboardPage() {
         </main>
       </div>
     </div>
+    </ProtectedRoute>
   );
 }
