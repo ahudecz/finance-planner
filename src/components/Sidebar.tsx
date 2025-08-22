@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { clsx } from "clsx";
+import { useAuth } from "@/lib/services/authService";
 
 interface SidebarProps {
   className?: string;
@@ -32,6 +33,9 @@ const navigation = [
 export function Sidebar({ className }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const pathname = usePathname();
+  const { profile, user, isAuthenticated, isLoading } = useAuth();
+  
+  
 
   return (
     <motion.div
@@ -125,7 +129,9 @@ export function Sidebar({ className }: SidebarProps) {
       <div className="p-4 border-t border-gray-200">
         <div className="flex items-center space-x-3">
           <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-            <span className="text-xs font-medium text-white">U</span>
+            <span className="text-xs font-medium text-white">
+              {profile?.fullName ? profile.fullName.charAt(0).toUpperCase() : profile?.email ? profile.email.charAt(0).toUpperCase() : '?'}
+            </span>
           </div>
           
           <motion.div
@@ -138,11 +144,18 @@ export function Sidebar({ className }: SidebarProps) {
             )}
           >
             <p className="text-sm font-medium text-gray-900 truncate">
-              User
+              {profile?.fullName || profile?.email?.split('@')[0] || user?.email?.split('@')[0] || (isAuthenticated ? 'Loading...' : 'Guest User')}
             </p>
-            <p className="text-xs text-gray-500 truncate">
-              user@example.com
-            </p>
+            <div className="flex items-center space-x-2">
+              <p className="text-xs text-gray-500 truncate">
+                {profile?.email || user?.email || (isAuthenticated ? 'Loading...' : 'Please sign in')}
+              </p>
+              {profile?.role && (
+                <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 text-xs rounded capitalize">
+                  {profile.role}
+                </span>
+              )}
+            </div>
           </motion.div>
         </div>
       </div>

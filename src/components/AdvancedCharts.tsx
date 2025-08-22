@@ -529,3 +529,5 @@ export function Charts({
     />
   );
 }
+
+export default AdvancedCharts;

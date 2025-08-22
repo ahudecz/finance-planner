@@ -261,3 +261,5 @@ export function Charts({
     </div>
   );
 }
+
+export default Charts;

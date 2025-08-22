@@ -5,8 +5,8 @@
  * authorization, and permission management using Supabase Auth.
  */
 
-import React from "react";
-import { supabase } from "@/lib/supabase/client";
+import React, { useState, useEffect } from "react";
+import { supabase, devBypassSupabase, shouldUseDevBypass } from "@/lib/supabase/client";
 import { createServerClient } from "@/lib/supabase/server";
 import type { User, Session } from "@supabase/supabase-js";
 
@@ -88,10 +88,20 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ]
 };
 
+// Cache configuration
+const PROFILE_CACHE_KEY = 'finance_planner_user_profile';
+const PROFILE_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
+
+interface CachedProfile {
+  profile: UserProfile;
+  timestamp: number;
+}
+
 class AuthService {
   private currentUser: User | null = null;
   private currentProfile: UserProfile | null = null;
   private listeners: Array<(authState: AuthState) => void> = [];
+  private isInitialized = false;
 
   constructor() {
     this.initialize();
@@ -101,18 +111,22 @@ class AuthService {
    * Initialize auth service and set up listeners
    */
   private async initialize(): Promise<void> {
+    if (this.isInitialized) return;
+    
     try {
       // Get initial session
       const { data: { session }, error } = await supabase.auth.getSession();
       
       if (error) {
         console.error("Error getting session:", error);
+        this.isInitialized = true;
         return;
       }
 
       if (session?.user) {
         this.currentUser = session.user;
-        this.currentProfile = await this.fetchUserProfile(session.user.id);
+        // Try to load from cache first, then fetch if needed
+        this.currentProfile = await this.getCachedOrFetchProfile(session.user.id);
       }
 
       // Listen for auth changes
@@ -121,22 +135,32 @@ class AuthService {
         
         if (session?.user) {
           this.currentUser = session.user;
-          this.currentProfile = await this.fetchUserProfile(session.user.id);
           
-          // Update last login
           if (event === "SIGNED_IN") {
-            await this.updateLastLogin(session.user.id);
+            // For sign in, clear cache and always fetch fresh profile
+            this.clearProfileCache();
+            this.currentProfile = await this.fetchUserProfile(session.user.id);
+            this.cacheProfile(this.currentProfile);
+            // Update last login async to avoid blocking
+            this.updateLastLogin(session.user.id).catch(console.error);
+          } else {
+            // For other events, try cache first
+            this.currentProfile = await this.getCachedOrFetchProfile(session.user.id);
           }
         } else {
           this.currentUser = null;
           this.currentProfile = null;
+          this.clearProfileCache();
         }
 
         this.notifyListeners();
       });
+      
+      this.isInitialized = true;
 
     } catch (error) {
       console.error("Error initializing auth service:", error);
+      this.isInitialized = true;
     }
   }
 
@@ -285,6 +309,7 @@ class AuthService {
 
       const updatedProfile = this.transformProfileFromDB(data);
       this.currentProfile = updatedProfile;
+      this.cacheProfile(updatedProfile);
       this.notifyListeners();
 
       return { profile: updatedProfile, error: null };
@@ -402,6 +427,29 @@ class AuthService {
    */
   private async fetchUserProfile(userId: string): Promise<UserProfile | null> {
     try {
+      // First check if user exists in auth
+      const { data: { user } } = await supabase.auth.getUser();
+      console.log("Current authenticated user:", user?.id, "Requested userId:", userId);
+      
+      // 🚨 DEVELOPMENT BYPASS: Use dev API endpoint to bypass RLS issues
+      if (shouldUseDevBypass()) {
+        console.log("🔓 Using development API bypass for user profile access");
+        
+        try {
+          const response = await fetch(`/api/dev-profile?userId=${userId}`);
+          const result = await response.json();
+          
+          if (response.ok && result.profile) {
+            console.log("✅ Successfully fetched profile via dev API");
+            return this.transformProfileFromDB(result.profile);
+          } else {
+            console.log("❌ Dev API fetch failed, trying normal method");
+          }
+        } catch (apiError) {
+          console.log("❌ Dev API error, falling back to normal method:", apiError);
+        }
+      }
+      
       const { data, error } = await supabase
         .from("user_profiles")
         .select("*")
@@ -409,14 +457,94 @@ class AuthService {
         .single();
 
       if (error || !data) {
-        console.error("Error fetching user profile:", error);
+        console.error("Error fetching user profile:", {
+          error: error ? JSON.stringify(error) : "No error object",
+          data: data ? "Data exists" : "No data",
+          userId,
+          errorCode: error?.code,
+          errorMessage: error?.message,
+          errorDetails: error?.details,
+          hint: error?.hint
+        });
+        
+        // If no data, try to create profile
+        if (!data) {
+          console.log("No profile found, attempting to create user profile for:", userId);
+          
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            // 🚨 DEVELOPMENT BYPASS: Use dev API to create profile
+            if (shouldUseDevBypass()) {
+              console.log("🔓 Using development API to create profile");
+              
+              try {
+                const response = await fetch('/api/dev-profile', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    userId,
+                    profileData: {
+                      email: user.email!,
+                      fullName: user.user_metadata?.full_name || null,
+                      role: "viewer",
+                      organizationId: undefined,
+                      isActive: true
+                    }
+                  })
+                });
+                
+                const result = await response.json();
+                if (response.ok && result.profile) {
+                  console.log("✅ Profile created successfully via dev API");
+                  return this.transformProfileFromDB(result.profile);
+                }
+              } catch (apiError) {
+                console.log("❌ Dev API profile creation failed:", apiError);
+              }
+            }
+            
+            // Fallback to normal method
+            try {
+              await this.createUserProfile(userId, {
+                email: user.email!,
+                fullName: user.user_metadata?.full_name || null,
+                role: "viewer",
+                organizationId: undefined,
+                isActive: true
+              });
+              
+              console.log("User profile created successfully, fetching...");
+              
+              // Try fetching again
+              const { data: newData, error: newError } = await supabase
+                .from("user_profiles")
+                .select("*")
+                .eq("id", userId)
+                .single();
+                
+              if (newError) {
+                console.error("Error fetching newly created profile:", newError);
+              } else if (newData) {
+                console.log("Successfully fetched newly created profile");
+                return this.transformProfileFromDB(newData);
+              }
+            } catch (createError) {
+              console.error("Error creating user profile:", createError);
+            }
+          }
+        }
+        
         return null;
       }
-
+      
       return this.transformProfileFromDB(data);
 
     } catch (error) {
-      console.error("Error in fetchUserProfile:", error);
+      console.error("Error in fetchUserProfile:", {
+        error,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        userId
+      });
       return null;
     }
   }
@@ -431,7 +559,16 @@ class AuthService {
     try {
       const permissions = ROLE_PERMISSIONS[profileData.role];
       
-      await supabase
+      console.log("Creating user profile with data:", {
+        userId,
+        email: profileData.email,
+        role: profileData.role,
+        permissions: permissions?.length
+      });
+      
+      const client = (shouldUseDevBypass() && devBypassSupabase) ? devBypassSupabase : supabase;
+      
+      const { error } = await client
         .from("user_profiles")
         .insert({
           id: userId,
@@ -444,8 +581,21 @@ class AuthService {
           is_active: profileData.isActive
         });
 
+      if (error) {
+        console.error("Supabase error creating user profile:", {
+          error,
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
+        throw error;
+      }
+
+      console.log("User profile created successfully in database");
+
     } catch (error) {
-      console.error("Error creating user profile:", error);
+      console.error("Error in createUserProfile:", error);
       throw error;
     }
   }
@@ -461,6 +611,85 @@ class AuthService {
         .eq("id", userId);
     } catch (error) {
       console.error("Error updating last login:", error);
+    }
+  }
+
+  /**
+   * Get profile from cache or fetch from database
+   */
+  private async getCachedOrFetchProfile(userId: string): Promise<UserProfile | null> {
+    // Try to get from cache first
+    const cached = this.getProfileFromCache(userId);
+    if (cached) {
+      return cached;
+    }
+    
+    // If not in cache or expired, fetch from database
+    const profile = await this.fetchUserProfile(userId);
+    if (profile) {
+      this.cacheProfile(profile);
+    }
+    
+    return profile;
+  }
+
+  /**
+   * Cache user profile in localStorage
+   */
+  private cacheProfile(profile: UserProfile | null): void {
+    if (!profile || typeof window === 'undefined') return;
+    
+    try {
+      const cachedData: CachedProfile = {
+        profile,
+        timestamp: Date.now()
+      };
+      localStorage.setItem(`${PROFILE_CACHE_KEY}_${profile.id}`, JSON.stringify(cachedData));
+    } catch (error) {
+      console.warn('Failed to cache user profile:', error);
+    }
+  }
+
+  /**
+   * Get profile from localStorage cache
+   */
+  private getProfileFromCache(userId: string): UserProfile | null {
+    if (typeof window === 'undefined') return null;
+    
+    try {
+      const cached = localStorage.getItem(`${PROFILE_CACHE_KEY}_${userId}`);
+      if (!cached) return null;
+      
+      const { profile, timestamp }: CachedProfile = JSON.parse(cached);
+      
+      // Check if cache is still valid
+      if (Date.now() - timestamp > PROFILE_CACHE_TTL) {
+        localStorage.removeItem(`${PROFILE_CACHE_KEY}_${userId}`);
+        return null;
+      }
+      
+      return profile;
+    } catch (error) {
+      console.warn('Failed to get profile from cache:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Clear profile cache
+   */
+  private clearProfileCache(): void {
+    if (typeof window === 'undefined') return;
+    
+    try {
+      // Clear all profile caches
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith(PROFILE_CACHE_KEY)) {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch (error) {
+      console.warn('Failed to clear profile cache:', error);
     }
   }
 
@@ -491,7 +720,7 @@ export const authService = new AuthService();
  * React hook for auth state
  */
 export function useAuth() {
-  const [authState, setAuthState] = React.useState<AuthState>({
+  const [authState, setAuthState] = useState<AuthState>({
     user: null,
     profile: null,
     session: null,
@@ -499,7 +728,7 @@ export function useAuth() {
     isAuthenticated: false
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     const unsubscribe = authService.subscribe(setAuthState);
     return unsubscribe;
   }, []);

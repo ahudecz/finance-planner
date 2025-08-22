@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run typecheck:*)",
+      "Bash(pkill:*)",
+      "Bash(npm run dev:*)",
+      "Bash(tasklist:*)",
+      "Bash(wmic:*)",
+      "Bash(taskkill:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(ren:*)",
+      "Bash(mv:*)",
+      "Bash(move:*)",
+      "Bash(cmd /c \"move finance-planner finance-planner-backup\")",
+      "Bash(cmd /c:*)",
+      "Bash(npm ls:*)",
+      "Bash(npm run clean:*)",
+      "Read(/C:\\d C:\\Users\\Asus/**)",
+      "Bash(npm run:*)",
+      "Bash(node:*)",
+      "Bash(del test-db.js run-migrations.js)",
+      "Bash(npx kill-port:*)",
+      "Bash(supabase:*)",
+      "Bash(npx supabase:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
