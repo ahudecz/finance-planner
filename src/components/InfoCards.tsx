@@ -3,105 +3,102 @@
 import { motion } from "framer-motion";
 import { 
   Building2, 
-  Users, 
-  DollarSign, 
+  Users,
+  Wallet, 
   Calendar,
-  Sparkles
+  TrendingUp
 } from "lucide-react";
 import { clsx } from "clsx";
+import { AgentStatusCard } from "./AgentStatusCard";
 
 interface InfoCardProps {
-  number: number;
   title: string;
   value: string;
+  subtitle?: string;
   icon: React.ElementType;
-  color: "blue" | "indigo" | "purple" | "red";
+  gradient: string;
   isLoading?: boolean;
   onClick?: () => void;
 }
 
-const colorClasses = {
-  blue: {
-    bg: "bg-blue-500",
-    text: "text-blue-700",
-    bgLight: "bg-blue-50",
-    border: "border-blue-200"
-  },
-  indigo: {
-    bg: "bg-indigo-500", 
-    text: "text-indigo-700",
-    bgLight: "bg-indigo-50",
-    border: "border-indigo-200"
-  },
-  purple: {
-    bg: "bg-purple-500",
-    text: "text-purple-700", 
-    bgLight: "bg-purple-50",
-    border: "border-purple-200"
-  },
-  red: {
-    bg: "bg-red-500",
-    text: "text-red-700",
-    bgLight: "bg-red-50", 
-    border: "border-red-200"
-  }
+const gradientClasses = {
+  primary: "from-blue-500 via-blue-600 to-indigo-600",
+  secondary: "from-purple-500 via-purple-600 to-pink-600",
+  success: "from-emerald-500 via-emerald-600 to-teal-600",
+  warning: "from-amber-500 via-orange-600 to-red-600"
 };
 
 function InfoCard({ 
-  number, 
   title, 
   value, 
+  subtitle,
   icon: Icon, 
-  color, 
+  gradient,
   isLoading = false,
   onClick 
 }: InfoCardProps) {
-  const colors = colorClasses[color];
   
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: number * 0.1 }}
-      whileHover={{ y: -2 }}
+      initial={{ opacity: 0, y: 10, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.3, ease: [0.4, 0.0, 0.2, 1] }}
+      whileHover={{ 
+        y: -2, 
+        scale: 1.01,
+        transition: { duration: 0.15 }
+      }}
       onClick={onClick}
-      className={clsx(
-        "relative bg-white rounded-xl border-2 p-6 cursor-pointer transition-all duration-200 hover:shadow-lg",
-        colors.border,
-        onClick && "hover:scale-[1.02]"
-      )}
+      className="group relative overflow-hidden rounded-md bg-white/80 backdrop-blur-xl border border-white/20 p-2 cursor-pointer hover:shadow-md hover:shadow-blue-500/10 transition-all duration-200"
+      style={{
+        boxShadow: 'var(--shadow-md)'
+      }}
     >
-      {/* Number Badge */}
+      {/* Background Gradient */}
       <div className={clsx(
-        "absolute -top-3 -left-3 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white shadow-lg",
-        colors.bg
-      )}>
-        {number}
-      </div>
-
-      {/* Icon */}
-      <div className={clsx(
-        "w-12 h-12 rounded-lg flex items-center justify-center mb-4",
-        colors.bgLight
-      )}>
-        <Icon className={clsx("w-6 h-6", colors.text)} />
+        "absolute inset-0 bg-gradient-to-br opacity-[0.03] group-hover:opacity-[0.06] transition-opacity duration-200",
+        gradient
+      )} />
+      
+      {/* Header - Icon and Title on one line */}
+      <div className="relative mb-1 flex items-center gap-2">
+        <div className={clsx(
+          "w-5 h-5 rounded-md bg-gradient-to-br flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform duration-200 flex-shrink-0",
+          gradient
+        )}>
+          <Icon className="w-2.5 h-2.5 text-white" />
+        </div>
+        <h3 className="text-xs font-medium text-gray-600 dark:text-gray-400 tracking-wide uppercase leading-tight flex-1 truncate">
+          {title}
+        </h3>
       </div>
 
       {/* Content */}
-      <div>
-        <h3 className="text-sm font-medium text-gray-600 mb-1">{title}</h3>
+      <div className="relative">
+        
         {isLoading ? (
-          <div className="h-8 bg-gray-200 rounded animate-pulse" />
+          <div className="space-y-0.5">
+            <div className="h-4 bg-gradient-to-r from-gray-200 to-gray-300 rounded shimmer" />
+            {subtitle && <div className="h-2 bg-gradient-to-r from-gray-200 to-gray-300 rounded shimmer" />}
+          </div>
         ) : (
-          <p className="text-2xl font-bold text-gray-900">{value}</p>
+          <>
+            <p className="text-sm font-bold text-gray-900 dark:text-white mb-0 group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-blue-600 group-hover:to-purple-600 transition-all duration-200 leading-tight">
+              {value}
+            </p>
+            {subtitle && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 leading-tight mt-0.5">
+                {subtitle}
+              </p>
+            )}
+          </>
         )}
       </div>
 
-      {/* Hover Effect */}
-      <div className={clsx(
-        "absolute inset-0 rounded-xl opacity-0 hover:opacity-5 transition-opacity duration-200",
-        colors.bg
-      )} />
+      {/* Shine Effect */}
+      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent -skew-x-12 translate-x-full group-hover:translate-x-[-200%] transition-transform duration-500" />
+      </div>
     </motion.div>
   );
 }
@@ -115,11 +112,13 @@ interface InfoCardsProps {
   savings?: number;
   isLoading?: boolean;
   onCompanyClick?: () => void;
-  onSizeClick?: () => void;
-  onCapexClick?: () => void;
-  onOpexClick?: () => void;
+  onBudgetClick?: () => void;
   onTimelineClick?: () => void;
   onSavingsClick?: () => void;
+  // Agent status props
+  agentIsActive?: boolean;
+  agentCurrentStage?: string;
+  agentProgress?: number;
 }
 
 export function InfoCards({
@@ -131,11 +130,12 @@ export function InfoCards({
   savings = 0,
   isLoading = false,
   onCompanyClick,
-  onSizeClick,
-  onCapexClick,
-  onOpexClick,
+  onBudgetClick,
   onTimelineClick,
-  onSavingsClick
+  onSavingsClick,
+  agentIsActive = false,
+  agentCurrentStage = 'vision',
+  agentProgress = 0
 }: InfoCardsProps) {
   const formatCurrency = (amount: number) => {
     if (amount === 0) return "$0";
@@ -147,70 +147,131 @@ export function InfoCards({
   const formatDays = (days: number) => {
     if (days === 0) return "0 days";
     if (days === 1) return "1 day";
+    if (days >= 7) return `${Math.ceil(days / 7)} weeks`;
     return `${days} days`;
   };
 
-  return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+  const totalBudget = capex + (opex * 12);
+  const budgetBreakdown = capex > 0 || opex > 0 ? `$${formatCurrency(capex).replace('$', '')} CAPEX + $${formatCurrency(opex * 12).replace('$', '')} OPEX/yr` : undefined;
+
+  // Determine which cards should be visible based on data availability
+  const hasCompanyData = companyName && companyName !== "Not Set" && companyName !== "Ginyard Co. (Demo)";
+  const hasCompanySizeData = companySize && companySize !== "Unknown";
+  const hasBudgetData = capex > 0 || opex > 0;
+  const hasTimelineData = timeline > 0;
+  const hasRoiData = savings > 0;
+
+  const visibleCards = [];
+
+  if (hasCompanyData || isLoading) {
+    visibleCards.push(
       <InfoCard
-        number={1}
-        title="COMPANY"
+        key="company"
+        title="Company"
         value={companyName}
+        subtitle=""
         icon={Building2}
-        color="blue"
+        gradient={gradientClasses.primary}
         isLoading={isLoading}
         onClick={onCompanyClick}
       />
-      
+    );
+  }
+
+  if (hasCompanySizeData || isLoading) {
+    visibleCards.push(
       <InfoCard
-        number={2}
-        title="SIZE"
+        key="size"
+        title="Team Size"
         value={companySize}
+        subtitle="employees"
         icon={Users}
-        color="blue"
+        gradient={gradientClasses.primary}
         isLoading={isLoading}
-        onClick={onSizeClick}
+        onClick={onCompanyClick}
       />
-      
+    );
+  }
+
+  if (hasBudgetData || isLoading) {
+    visibleCards.push(
       <InfoCard
-        number={3}
-        title="CAPEX"
-        value={formatCurrency(capex)}
-        icon={DollarSign}
-        color="indigo"
+        key="budget"
+        title="Budget"
+        value={formatCurrency(totalBudget)}
+        subtitle={budgetBreakdown}
+        icon={Wallet}
+        gradient={gradientClasses.secondary}
         isLoading={isLoading}
-        onClick={onCapexClick}
+        onClick={onBudgetClick}
       />
-      
+    );
+  }
+
+  if (hasTimelineData || isLoading) {
+    visibleCards.push(
       <InfoCard
-        number={3}
-        title="OPEX"
-        value={formatCurrency(opex)}
-        icon={DollarSign}
-        color="indigo"
-        isLoading={isLoading}
-        onClick={onOpexClick}
-      />
-      
-      <InfoCard
-        number={4}
-        title="TIMELINE"
+        key="timeline"
+        title="Timeline"
         value={formatDays(timeline)}
+        subtitle="duration"
         icon={Calendar}
-        color="purple"
+        gradient={gradientClasses.success}
         isLoading={isLoading}
         onClick={onTimelineClick}
       />
-      
+    );
+  }
+
+  if (hasRoiData || isLoading) {
+    visibleCards.push(
       <InfoCard
-        number={12}
-        title="SAVINGS"
+        key="roi"
+        title="ROI"
         value={formatCurrency(savings)}
-        icon={Sparkles}
-        color="red"
+        subtitle={savings > 0 && totalBudget > 0 ? `${Math.round(((savings - totalBudget) / totalBudget) * 100)}% return` : "projected"}
+        icon={TrendingUp}
+        gradient={gradientClasses.warning}
         isLoading={isLoading}
         onClick={onSavingsClick}
       />
+    );
+  }
+
+  // Add agent status card if there are empty slots or agent is active
+  const maxCards = 4;
+  const shouldShowAgentCard = agentIsActive || visibleCards.length < maxCards;
+  
+  if (shouldShowAgentCard && visibleCards.length < maxCards) {
+    visibleCards.push(
+      <AgentStatusCard
+        key="agent-status"
+        isActive={agentIsActive}
+        currentStage={agentCurrentStage}
+        progress={agentProgress}
+      />
+    );
+  }
+
+  // If no cards are visible and not loading, show just the agent card
+  if (visibleCards.length === 0 && !isLoading) {
+    return (
+      <div className="grid grid-cols-1 gap-2">
+        <AgentStatusCard
+          isActive={agentIsActive}
+          currentStage={agentCurrentStage}
+          progress={agentProgress}
+        />
+      </div>
+    );
+  }
+
+  // Dynamic grid columns based on number of visible cards
+  const gridColsClass = `grid-cols-1 sm:grid-cols-${Math.min(2, visibleCards.length)} lg:grid-cols-${visibleCards.length}`;
+
+  return (
+    <div className={`grid ${gridColsClass} gap-2`}>
+      {visibleCards}
     </div>
   );
 }

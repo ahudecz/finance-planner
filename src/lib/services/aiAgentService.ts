@@ -67,12 +67,15 @@ export interface AIAgentState {
     content: string;
     timestamp: Date;
   }>;
+  waitingForConfirmation: boolean;
+  currentStepResult?: any;
 }
 
 export class AIAgentEngine {
   private state: AIAgentState;
   private listeners: Array<(state: AIAgentState) => void> = [];
   private useOpenAI: boolean = false;
+  private confirmationResolver: ((proceed: boolean) => void) | null = null;
 
   constructor() {
     this.state = {
@@ -82,7 +85,9 @@ export class AIAgentEngine {
       reasoningHistory: [],
       toolsUsed: [],
       fieldProgress: {},
-      conversationLog: []
+      conversationLog: [],
+      waitingForConfirmation: false,
+      currentStepResult: undefined
     };
     
     // Check if OpenAI is available
@@ -110,39 +115,65 @@ export class AIAgentEngine {
       ...this.state,
       isActive: true,
       currentThinking: {
-        currentThought: "Let me understand this business idea...",
+        currentThought: "Let me understand this project idea...",
         currentField: null,
-        reasoning: `I need to carefully analyze "${businessIdea}" and break it down into actionable business components.`,
-        confidence: 0.9,
+        reasoning: `I need to carefully analyze "${businessIdea}" and clarify what type of project this is before proceeding.`,
+        confidence: 0.7,
         nextSteps: [
-          "Understand the core business concept",
-          "Identify key stakeholders and users",
-          "Analyze market context and competition",
-          "Estimate technical requirements"
+          "Clarify project type (business idea, process improvement, or change management)",
+          "Gather additional context through clarifying questions",
+          "Collect user approval before beginning detailed analysis",
+          "Proceed with appropriate analysis framework"
         ],
         uncertainties: [
-          "What's the target market size?",
-          "Are there any specific technical constraints?",
-          "What's the preferred budget range?"
+          "Is this a business idea, process improvement, or change management initiative?",
+          "What's the scope and scale of this project?",
+          "What specific outcomes are expected?"
         ],
         assumptions: [
-          "This is a new business venture",
-          "Budget is flexible within reason",
-          "Timeline is moderately flexible"
+          "Need to clarify project type before analysis",
+          "Will require 1-2 rounds of clarifying questions",
+          "Analysis approach will depend on project type"
         ]
       },
-      todoList: this.createInitialTodoList(businessIdea),
+      todoList: this.createClarificationTodoList(businessIdea),
       conversationLog: [{
         type: 'thinking',
-        content: `Starting analysis of business idea: "${businessIdea}"`,
+        content: `Starting analysis of project: "${businessIdea}" - Need to clarify project type first`,
         timestamp: new Date()
       }]
     };
 
     this.notifyListeners();
     
-    // Begin the analysis workflow
-    await this.executeAnalysisWorkflow(businessIdea);
+    // Begin the clarification and analysis workflow
+    await this.executeClarificationWorkflow(businessIdea);
+  }
+
+  private createClarificationTodoList(businessIdea: string): AITodoItem[] {
+    return [
+      {
+        id: 'clarify-project-type',
+        task: 'Clarify project type and scope',
+        status: 'pending',
+        progress: 0,
+        reasoning: 'Need to understand if this is a business idea, process improvement, or change management initiative'
+      },
+      {
+        id: 'gather-context',
+        task: 'Gather additional context through questions',
+        status: 'pending',
+        progress: 0,
+        reasoning: 'Collect specific details to tailor the analysis approach'
+      },
+      {
+        id: 'get-approval',
+        task: 'Get user approval to proceed with analysis',
+        status: 'pending',
+        progress: 0,
+        reasoning: 'Confirm understanding and get permission to begin detailed analysis'
+      }
+    ];
   }
 
   private createInitialTodoList(businessIdea: string): AITodoItem[] {
@@ -190,6 +221,32 @@ export class AIAgentEngine {
         reasoning: 'Risk analysis helps in better planning and contingency preparation'
       }
     ];
+  }
+
+  private async executeClarificationWorkflow(businessIdea: string) {
+    try {
+      // Step 1: Clarify project type
+      await this.executeStep('clarify-project-type', async () => {
+        return await this.clarifyProjectType(businessIdea);
+      });
+
+      // Step 2: Gather additional context
+      await this.executeStep('gather-context', async () => {
+        return await this.gatherAdditionalContext(businessIdea);
+      });
+
+      // Step 3: Get approval to proceed
+      await this.executeStep('get-approval', async () => {
+        return await this.getAnalysisApproval(businessIdea);
+      });
+
+      // Switch to main analysis workflow
+      await this.executeAnalysisWorkflow(businessIdea);
+
+    } catch (error) {
+      console.error('AI Agent clarification failed:', error);
+      this.handleAnalysisError(error);
+    }
   }
 
   private async executeAnalysisWorkflow(businessIdea: string) {
@@ -240,10 +297,45 @@ export class AIAgentEngine {
     // Execute the step
     const result = await stepFunction();
     
+    // Wait for confirmation before proceeding
+    await this.waitForStepConfirmation(todoId, result);
+    
     // Mark todo as completed
     this.updateTodoStatus(todoId, 'completed');
     
     return result;
+  }
+
+  private async waitForStepConfirmation(todoId: string, result: any): Promise<void> {
+    return new Promise((resolve) => {
+      this.state.waitingForConfirmation = true;
+      this.state.currentStepResult = result;
+      this.state.isActive = false; // Pause the agent
+      this.notifyListeners();
+      
+      // Store resolver to be called when user confirms
+      this.confirmationResolver = (proceed: boolean) => {
+        this.state.waitingForConfirmation = false;
+        this.state.currentStepResult = undefined;
+        this.state.isActive = true; // Resume the agent
+        this.confirmationResolver = null;
+        this.notifyListeners();
+        
+        if (proceed) {
+          resolve();
+        } else {
+          // User cancelled - could implement cancellation logic here
+          resolve();
+        }
+      };
+    });
+  }
+
+  // Public method for external confirmation
+  public confirmStep(proceed: boolean = true): void {
+    if (this.confirmationResolver) {
+      this.confirmationResolver(proceed);
+    }
   }
 
   private updateTodoStatus(todoId: string, status: AITodoItem['status'], progress: number = 100) {
@@ -842,6 +934,176 @@ export class AIAgentEngine {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  // Clarification workflow methods
+  private async clarifyProjectType(idea: string) {
+    this.updateThinking({
+      currentThought: "Analyzing the project type and scope...",
+      currentField: null,
+      reasoning: "I need to understand whether this is a business idea, process improvement, or change management initiative to provide appropriate analysis.",
+      confidence: 0.8
+    });
+
+    await this.simulateThinking(2000);
+
+    const projectType = this.classifyProjectType(idea);
+    const clarifyingQuestions = this.generateClarifyingQuestions(idea, projectType, 1);
+
+    this.addReasoningStep({
+      step: 'Project Type Clarification',
+      reasoning: `Analyzed "${idea}" and classified it as a ${projectType}. Generated ${clarifyingQuestions.length} clarifying questions.`,
+      confidence: 0.8,
+      toolsConsidered: ['Project Type Classification', 'Question Generation'],
+      decision: `Project classified as: ${projectType}. Need user input on: ${clarifyingQuestions.map((q: any) => q.topic).join(', ')}`
+    });
+
+    return { projectType, questions: clarifyingQuestions };
+  }
+
+  private async gatherAdditionalContext(idea: string) {
+    this.updateThinking({
+      currentThought: "Gathering additional context through follow-up questions...",
+      currentField: null,
+      reasoning: "Second round of clarifying questions to gather any missing critical information.",
+      confidence: 0.85
+    });
+
+    await this.simulateThinking(1500);
+
+    // For simulation, generate second round questions
+    const projectType = this.classifyProjectType(idea);
+    const followupQuestions = this.generateClarifyingQuestions(idea, projectType, 2);
+
+    this.addReasoningStep({
+      step: 'Additional Context Gathering',
+      reasoning: `Generated ${followupQuestions.length} follow-up questions to gather remaining context needed for analysis.`,
+      confidence: 0.85,
+      toolsConsidered: ['Context Analysis', 'Gap Identification'],
+      decision: `Ready to proceed with analysis after addressing: ${followupQuestions.map((q: any) => q.topic).join(', ')}`
+    });
+
+    return { questions: followupQuestions };
+  }
+
+  private async getAnalysisApproval(idea: string) {
+    this.updateThinking({
+      currentThought: "Preparing analysis plan for user approval...",
+      currentField: null,
+      reasoning: "Summarizing understanding and getting approval to proceed with detailed analysis.",
+      confidence: 0.9
+    });
+
+    await this.simulateThinking(1000);
+
+    const analysisPlan = this.createAnalysisPlan(idea);
+
+    this.addReasoningStep({
+      step: 'Analysis Approval Request',
+      reasoning: `Created comprehensive analysis plan with ${analysisPlan.phases.length} phases. Ready to proceed with user approval.`,
+      confidence: 0.9,
+      toolsConsidered: ['Analysis Planning', 'Phase Structure'],
+      decision: `Analysis plan ready: ${analysisPlan.phases.map(p => p.name).join(' → ')}`
+    });
+
+    // Switch to main analysis todo list
+    this.state.todoList = this.createInitialTodoList(idea);
+    this.notifyListeners();
+
+    return analysisPlan;
+  }
+
+  private classifyProjectType(idea: string): 'business' | 'process' | 'change_management' {
+    const lowerIdea = idea.toLowerCase();
+    
+    if (lowerIdea.includes('reorg') || lowerIdea.includes('reorgani') || 
+        lowerIdea.includes('change management') || lowerIdea.includes('restructur')) {
+      return 'change_management';
+    }
+    
+    if (lowerIdea.includes('process') || lowerIdea.includes('workflow') || 
+        lowerIdea.includes('improve') || lowerIdea.includes('optimiz') ||
+        lowerIdea.includes('automat') || lowerIdea.includes('streamline')) {
+      return 'process';
+    }
+    
+    return 'business';
+  }
+
+  private generateClarifyingQuestions(idea: string, projectType: 'business' | 'process' | 'change_management', round: number) {
+    const baseQuestions: Record<'business' | 'process' | 'change_management', Array<{topic: string, question: string}>> = {
+      business: [
+        { topic: 'Target Market', question: 'Who is your primary target market or customer base?' },
+        { topic: 'Business Model', question: 'How do you plan to generate revenue from this idea?' },
+        { topic: 'Value Proposition', question: 'What unique value does this solution provide?' },
+      ],
+      process: [
+        { topic: 'Current State', question: 'What is the current process that needs improvement?' },
+        { topic: 'Pain Points', question: 'What specific problems or inefficiencies exist?' },
+        { topic: 'Success Metrics', question: 'How will you measure the success of this improvement?' },
+      ],
+      change_management: [
+        { topic: 'Scope of Change', question: 'What departments or functions will be affected by this change?' },
+        { topic: 'Change Drivers', question: 'What is driving the need for this organizational change?' },
+        { topic: 'Stakeholders', question: 'Who are the key stakeholders and decision makers?' },
+      ]
+    };
+
+    const followupQuestions: Record<'business' | 'process' | 'change_management', Array<{topic: string, question: string}>> = {
+      business: [
+        { topic: 'Competition', question: 'Who are your main competitors and how will you differentiate?' },
+        { topic: 'Budget Range', question: 'What is your expected budget range for this project?' },
+      ],
+      process: [
+        { topic: 'Implementation Timeline', question: 'What is your desired timeline for implementing these improvements?' },
+        { topic: 'Resource Constraints', question: 'What resources or constraints should we consider?' },
+      ],
+      change_management: [
+        { topic: 'Change Readiness', question: 'How ready is the organization for this type of change?' },
+        { topic: 'Communication Plan', question: 'How do you plan to communicate this change to stakeholders?' },
+      ]
+    };
+
+    return round === 1 ? baseQuestions[projectType] || baseQuestions.business 
+                      : followupQuestions[projectType] || followupQuestions.business;
+  }
+
+  private createAnalysisPlan(idea: string) {
+    const projectType = this.classifyProjectType(idea);
+    
+    const phases = {
+      business: [
+        { name: 'Business Concept Analysis', description: 'Analyze core business concept and value proposition' },
+        { name: 'Market Research', description: 'Research target market and competitive landscape' },
+        { name: 'Technical Requirements', description: 'Define technical architecture and requirements' },
+        { name: 'Financial Analysis', description: 'Calculate CAPEX, OPEX, and ROI projections' },
+        { name: 'Timeline & Resources', description: 'Estimate timeline and resource requirements' },
+        { name: 'Risk Assessment', description: 'Identify and assess potential risks and mitigation strategies' },
+      ],
+      process: [
+        { name: 'Current State Analysis', description: 'Analyze existing process and identify inefficiencies' },
+        { name: 'Process Design', description: 'Design improved process workflow' },
+        { name: 'Technology Requirements', description: 'Define technology needs for process improvement' },
+        { name: 'Implementation Planning', description: 'Plan rollout strategy and resource needs' },
+        { name: 'Change Management', description: 'Plan user training and adoption strategy' },
+        { name: 'Success Metrics', description: 'Define KPIs and measurement framework' },
+      ],
+      change_management: [
+        { name: 'Organizational Assessment', description: 'Assess current organizational structure and culture' },
+        { name: 'Change Impact Analysis', description: 'Analyze impact on different stakeholder groups' },
+        { name: 'Communication Strategy', description: 'Develop comprehensive communication plan' },
+        { name: 'Training & Development', description: 'Plan training programs and skill development' },
+        { name: 'Implementation Roadmap', description: 'Create phased implementation timeline' },
+        { name: 'Risk Mitigation', description: 'Identify change risks and mitigation strategies' },
+      ]
+    };
+
+    return {
+      projectType,
+      phases: phases[projectType] || phases.business,
+      estimatedDuration: projectType === 'change_management' ? '12-18 weeks' : 
+                         projectType === 'process' ? '8-12 weeks' : '10-16 weeks'
+    };
+  }
+
   // Public methods to get current state
   getState(): AIAgentState {
     return { ...this.state };
@@ -861,6 +1123,30 @@ export class AIAgentEngine {
 
   getFieldProgress(): Record<string, any> {
     return { ...this.state.fieldProgress };
+  }
+
+  // Reset the agent to initial state
+  reset() {
+    console.log('🤖 AI Agent: Resetting agent state');
+    this.state = {
+      isActive: false,
+      currentThinking: null,
+      todoList: [],
+      reasoningHistory: [],
+      toolsUsed: [],
+      fieldProgress: {},
+      conversationLog: [],
+      waitingForConfirmation: false,
+      currentStepResult: undefined
+    };
+    
+    // Clear any pending confirmation resolvers
+    if (this.confirmationResolver) {
+      this.confirmationResolver(false);
+      this.confirmationResolver = null;
+    }
+    
+    this.notifyListeners();
   }
 }
 

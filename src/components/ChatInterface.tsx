@@ -7,6 +7,7 @@ import { clsx } from "clsx";
 import { aiService, AIAnalysisProgress } from "@/lib/services/aiService";
 import { aiAgent, AIAgentState } from "@/lib/services/aiAgentService";
 import { AIAgentDisplay } from "./AIAgentDisplay";
+import { AgentTodoList } from "./AgentTodoList";
 
 interface Message {
   id: string;
@@ -177,23 +178,30 @@ export function ChatInterface({ onIdeaSubmit, onAnalysisComplete, className }: C
   };
 
   return (
-    <div className={clsx("space-y-4", className)}>
-      {/* AI Agent Display */}
+    <div className={clsx("h-full flex gap-4", className)}>
+      {/* AI Agent Display & Todo List */}
       {(agentState.isActive || agentState.todoList.length > 0) && (
-        <AIAgentDisplay />
+        <div className="w-80 flex-shrink-0 space-y-4">
+          <AgentTodoList 
+            todos={agentState.todoList} 
+            title="Business Idea Analysis" 
+          />
+          <AIAgentDisplay />
+        </div>
       )}
 
       {/* Chat Interface */}
-      <div className="bg-white rounded-xl border-2 border-blue-200 flex flex-col h-96">
+      <div className="bg-white/80 backdrop-blur-xl rounded-2xl border border-white/20 flex flex-col flex-1 min-h-0"
+           style={{ boxShadow: 'var(--shadow-lg)' }}>
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+        <div className="flex items-center justify-between p-4 border-b border-white/20 bg-gradient-to-r from-blue-500/5 to-purple-500/5 rounded-t-2xl">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
-              <span className="text-white font-bold text-lg">9</span>
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg">
+              <Bot className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900">PROMPT</h3>
-              <p className="text-sm text-gray-500">AI Planning Assistant</p>
+              <h3 className="font-semibold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">AI Planning Assistant</h3>
+              <p className="text-xs text-gray-500">Business idea analysis & planning</p>
             </div>
           </div>
           <div className="flex items-center space-x-1">

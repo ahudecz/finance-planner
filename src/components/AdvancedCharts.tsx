@@ -23,6 +23,7 @@ interface ChartData {
   timeline: TimelineData[];
   budget: BudgetData[];
   trends: TrendData[];
+  heatmap: any[];
   riskHeatmap: HeatmapData[];
 }
 
@@ -61,7 +62,7 @@ interface AdvancedChartProps {
 
 type ChartType = 'timeline' | 'budget' | 'trends' | 'heatmap';
 
-export function AdvancedCharts({ data, onExport, className }: AdvancedChartProps) {
+export function AdvancedCharts({ data = defaultChartData, onExport, className }: AdvancedChartProps) {
   const [activeChart, setActiveChart] = useState<ChartType>('timeline');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [chartSettings, setChartSettings] = useState({
@@ -70,6 +71,15 @@ export function AdvancedCharts({ data, onExport, className }: AdvancedChartProps
     showTooltips: true,
     theme: 'light' as 'light' | 'dark'
   });
+
+  // Ensure data has the required structure
+  const chartData = {
+    timeline: data?.timeline || defaultChartData.timeline,
+    budget: data?.budget || defaultChartData.budget,
+    trends: data?.trends || defaultChartData.trends,
+    heatmap: data?.heatmap || [],
+    riskHeatmap: data?.riskHeatmap || []
+  };
 
   const chartTypes = [
     { id: 'timeline' as ChartType, label: 'Timeline', icon: Calendar },
@@ -150,25 +160,25 @@ export function AdvancedCharts({ data, onExport, className }: AdvancedChartProps
         )}>
           {activeChart === 'timeline' && (
             <EnhancedTimelineChart 
-              data={data.timeline} 
+              data={chartData.timeline} 
               settings={chartSettings}
             />
           )}
           {activeChart === 'budget' && (
             <EnhancedBudgetChart 
-              data={data.budget} 
+              data={chartData.budget} 
               settings={chartSettings}
             />
           )}
           {activeChart === 'trends' && (
             <EnhancedTrendsChart 
-              data={data.trends} 
+              data={chartData.trends} 
               settings={chartSettings}
             />
           )}
           {activeChart === 'heatmap' && (
             <RiskHeatmapChart 
-              data={data.riskHeatmap} 
+              data={chartData.riskHeatmap} 
               settings={chartSettings}
             />
           )}
@@ -478,6 +488,7 @@ const defaultChartData: ChartData = {
       ]
     }
   ],
+  heatmap: [],
   riskHeatmap: [
     {
       id: 'Technical',

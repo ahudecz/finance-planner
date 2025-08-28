@@ -11,7 +11,8 @@ import {
   Settings, 
   ChevronLeft,
   ChevronRight,
-  Lightbulb
+  Lightbulb,
+  PieChart
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { clsx } from "clsx";
@@ -24,6 +25,7 @@ interface SidebarProps {
 const navigation = [
   { name: "Home", href: "/", icon: Home },
   { name: "Dashboard", href: "/dashboard", icon: BarChart3 },
+  { name: "Charts", href: "/charts", icon: PieChart },
   { name: "Ideas", href: "/ideas", icon: Lightbulb },
   { name: "Projects", href: "/projects", icon: Briefcase },
   { name: "Team", href: "/team", icon: Users },
@@ -43,23 +45,24 @@ export function Sidebar({ className }: SidebarProps) {
       animate={{ width: isCollapsed ? 80 : 256 }}
       transition={{ duration: 0.3, ease: "easeInOut" }}
       className={clsx(
-        "bg-white border-r border-gray-200 flex flex-col h-screen relative",
+        "bg-white/80 backdrop-blur-xl border-r border-white/20 flex flex-col h-screen relative",
         className
       )}
+      style={{ boxShadow: 'var(--shadow-lg)' }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200">
+      <div className="flex items-center justify-between p-4 border-b border-white/20 bg-gradient-to-r from-blue-500/5 to-purple-500/5">
         <motion.div
           initial={{ opacity: 1 }}
           animate={{ opacity: isCollapsed ? 0 : 1 }}
           transition={{ duration: 0.2 }}
           className="flex items-center space-x-2"
         >
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center shadow-lg">
             <Briefcase className="w-5 h-5 text-white" />
           </div>
           {!isCollapsed && (
-            <span className="text-lg font-semibold text-gray-900">
+            <span className="text-lg font-semibold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
               Finance Planner
             </span>
           )}
@@ -67,7 +70,7 @@ export function Sidebar({ className }: SidebarProps) {
         
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="p-1.5 rounded-md hover:bg-gray-100 transition-colors"
+          className="p-1.5 rounded-md hover:bg-white/50 backdrop-blur-sm transition-all duration-200 hover:shadow-sm"
         >
           {isCollapsed ? (
             <ChevronRight className="w-4 h-4 text-gray-500" />
@@ -90,8 +93,8 @@ export function Sidebar({ className }: SidebarProps) {
               className={clsx(
                 "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
                 isActive
-                  ? "bg-blue-50 text-blue-700 border border-blue-200"
-                  : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                  ? "bg-gradient-to-r from-blue-50 to-purple-50 text-blue-700 border border-blue-200/50 shadow-sm"
+                  : "text-gray-600 hover:bg-white/50 hover:text-gray-900 hover:shadow-sm"
               )}
             >
               <item.icon className={clsx(
@@ -126,9 +129,9 @@ export function Sidebar({ className }: SidebarProps) {
       </nav>
 
       {/* Footer */}
-      <div className="p-4 border-t border-gray-200">
+      <div className="p-4 border-t border-white/20 bg-gradient-to-r from-blue-500/5 to-purple-500/5">
         <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+          <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg">
             <span className="text-xs font-medium text-white">
               {profile?.fullName ? profile.fullName.charAt(0).toUpperCase() : profile?.email ? profile.email.charAt(0).toUpperCase() : '?'}
             </span>
@@ -151,7 +154,7 @@ export function Sidebar({ className }: SidebarProps) {
                 {profile?.email || user?.email || (isAuthenticated ? 'Loading...' : 'Please sign in')}
               </p>
               {profile?.role && (
-                <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 text-xs rounded capitalize">
+                <span className="px-1.5 py-0.5 bg-gradient-to-r from-blue-100 to-purple-100 text-blue-700 text-xs rounded capitalize font-medium">
                   {profile.role}
                 </span>
               )}

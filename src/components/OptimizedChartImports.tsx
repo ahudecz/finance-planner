@@ -21,10 +21,8 @@ export {
 } from "recharts";
 
 // Nivo - advanced charts (lazy loaded)
-export type { ResponsivePieProps } from "@nivo/pie";
-export type { ResponsiveBarProps } from "@nivo/bar";
-export type { ResponsiveLineProps } from "@nivo/line";
-export type { ResponsiveHeatMapProps } from "@nivo/heatmap";
+// Using any for now as Nivo type exports are inconsistent across versions
+export type NivoChartProps = any;
 
 function ChartSkeleton() {
   return (

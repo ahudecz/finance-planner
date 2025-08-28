@@ -266,6 +266,8 @@ export function AIAgentDisplay({ className }: AIAgentDisplayProps) {
 }
 
 function TodoItem({ todo }: { todo: AITodoItem }) {
+  const [expandedOutcome, setExpandedOutcome] = useState(false);
+
   const getStatusIcon = (status: AITodoItem['status']) => {
     switch (status) {
       case 'completed':
@@ -279,51 +281,122 @@ function TodoItem({ todo }: { todo: AITodoItem }) {
     }
   };
 
+  const hasOutcome = todo.status === 'completed';
+
   return (
     <motion.div
       initial={{ opacity: 0, x: -10 }}
       animate={{ opacity: 1, x: 0 }}
-      className="flex items-start space-x-3 p-3 bg-white rounded-md border border-gray-200"
+      className="bg-white rounded-md border border-gray-200 overflow-hidden"
     >
-      {getStatusIcon(todo.status)}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between">
-          <span className={clsx(
-            "text-sm font-medium",
-            todo.status === 'completed' ? "text-gray-500 line-through" : "text-gray-900"
-          )}>
-            {todo.task}
-          </span>
-          {todo.confidence && (
-            <span className="text-xs text-gray-500">
-              {Math.round(todo.confidence * 100)}%
+      <div className="flex items-start space-x-3 p-3">
+        {getStatusIcon(todo.status)}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between">
+            <span className={clsx(
+              "text-sm font-medium",
+              todo.status === 'completed' ? "text-gray-900" : "text-gray-900"
+            )}>
+              {todo.task}
             </span>
-          )}
-        </div>
-        {todo.reasoning && (
-          <p className="text-xs text-gray-600 mt-1">{todo.reasoning}</p>
-        )}
-        {todo.status === 'in_progress' && todo.progress > 0 && (
-          <div className="mt-2">
-            <div className="w-full bg-gray-200 rounded-full h-1.5">
-              <motion.div
-                className="bg-blue-600 h-1.5 rounded-full"
-                initial={{ width: 0 }}
-                animate={{ width: `${todo.progress}%` }}
-                transition={{ duration: 0.5 }}
-              />
+            <div className="flex items-center space-x-2">
+              {todo.confidence && (
+                <span className="text-xs text-gray-500">
+                  {Math.round(todo.confidence * 100)}%
+                </span>
+              )}
+              {hasOutcome && (
+                <button
+                  onClick={() => setExpandedOutcome(!expandedOutcome)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  {expandedOutcome ? 
+                    <ChevronDown className="w-4 h-4" /> : 
+                    <ChevronRight className="w-4 h-4" />
+                  }
+                </button>
+              )}
             </div>
           </div>
-        )}
-        {todo.startTime && todo.status !== 'pending' && (
-          <div className="text-xs text-gray-400 mt-1">
-            Started: {todo.startTime.toLocaleTimeString()}
-            {todo.completedTime && (
-              <span> • Completed: {todo.completedTime.toLocaleTimeString()}</span>
-            )}
-          </div>
-        )}
+          
+          {todo.status === 'in_progress' && todo.reasoning && (
+            <p className="text-xs text-gray-600 mt-1">{todo.reasoning}</p>
+          )}
+          
+          {todo.status === 'in_progress' && todo.progress > 0 && (
+            <div className="mt-2">
+              <div className="w-full bg-gray-200 rounded-full h-1.5">
+                <motion.div
+                  className="bg-blue-600 h-1.5 rounded-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${todo.progress}%` }}
+                  transition={{ duration: 0.5 }}
+                />
+              </div>
+            </div>
+          )}
+          
+          {todo.startTime && todo.status !== 'pending' && todo.status !== 'completed' && (
+            <div className="text-xs text-gray-400 mt-1">
+              Started: {todo.startTime.toLocaleTimeString()}
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Expanded Outcome Section for Completed Tasks */}
+      <AnimatePresence>
+        {hasOutcome && expandedOutcome && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="border-t border-gray-100 bg-green-50 px-3 py-3"
+          >
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2 mb-2">
+                <CheckCircle className="w-3 h-3 text-green-600" />
+                <span className="text-xs font-medium text-green-800">Task Outcome</span>
+              </div>
+              
+              <div className="bg-white rounded-md p-2 border border-green-200">
+                <span className="text-xs font-medium text-gray-700">Result:</span>
+                <p className="text-xs text-gray-600 mt-1">
+                  {todo.reasoning || "Task completed successfully"}
+                </p>
+              </div>
+              
+              <div className="flex justify-between items-center text-xs text-green-700">
+                <span>
+                  Completed: {todo.completedTime?.toLocaleTimeString() || "Recently"}
+                </span>
+                {todo.startTime && todo.completedTime && (
+                  <span>
+                    Duration: {Math.round((todo.completedTime.getTime() - todo.startTime.getTime()) / 1000)}s
+                  </span>
+                )}
+              </div>
+              
+              {todo.confidence && (
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs text-gray-600">Final Confidence:</span>
+                  <div className="flex items-center space-x-1">
+                    <div className="w-16 bg-gray-200 rounded-full h-1.5">
+                      <motion.div
+                        className="bg-green-600 h-1.5 rounded-full"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${todo.confidence * 100}%` }}
+                        transition={{ duration: 0.5 }}
+                      />
+                    </div>
+                    <span className="text-xs text-gray-500">{Math.round(todo.confidence * 100)}%</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

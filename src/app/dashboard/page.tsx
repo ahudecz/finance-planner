@@ -7,10 +7,10 @@ import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { InfoCards } from "@/components/InfoCards";
 import { ChatInterface } from "@/components/ChatInterface";
-import { ResourcePanels } from "@/components/ResourcePanels";
-import { RisksPanel } from "@/components/RisksPanel";
-import { TechnicalPanel } from "@/components/TechnicalPanel";
-import { LazyCharts } from "@/components/LazyCharts";
+// Removed unused imports - these are now part of ConsolidatedRightPanel
+import { TabbedChartInterface } from "@/components/TabbedChartInterface";
+import { ConsolidatedRightPanel } from "@/components/ConsolidatedRightPanel";
+import { DarkModeToggle } from "@/components/DarkModeToggle";
 import { processIdeaSubmission, type DashboardData } from "@/lib/services/dashboardService";
 import { exportDashboardSummary } from "@/lib/services/exportService";
 import { PermissionWrapper } from "@/components/PermissionWrapper";
@@ -147,42 +147,49 @@ export default function DashboardPage() {
 
   return (
     <ProtectedRoute requireAuth>
-      <div className="flex h-screen bg-gray-50">
+      <div className="flex h-screen bg-gradient-to-br from-gray-50 to-blue-50/30 dark:from-gray-900 dark:to-blue-900/30 transition-all duration-500">
         {/* Sidebar */}
         <Sidebar />
         
         {/* Main Content */}
         <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="bg-white border-b border-gray-200 px-6 py-4">
+        {/* Compact Header */}
+        <header className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-b border-white/20 dark:border-gray-700/30 px-6 py-2 transition-all duration-300">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">INSTRUCTIONS</h1>
-              <p className="text-gray-600 text-sm mt-1">
-                Lorem ipsum (pls fill this field with the instructions)
+              <h1 className="text-lg font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">Finance Planner Dashboard</h1>
+              <p className="text-gray-600 text-xs">
+                AI-powered business idea analysis and planning
               </p>
             </div>
             
             <div className="flex items-center space-x-4">
               <PermissionWrapper permission="export_data">
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => handleExport('pdf')}
-                    disabled={isExporting || !dashboardData.currentIdeaId}
-                    className="flex items-center space-x-2 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <FileText className="w-4 h-4" />
-                    <span>PDF</span>
+                <div className="relative group">
+                  <button className="flex items-center space-x-2 px-3 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl">
+                    <Download className="w-4 h-4" />
+                    <span className="text-sm font-medium">Export</span>
                   </button>
                   
-                  <button
-                    onClick={() => handleExport('excel')}
-                    disabled={isExporting || !dashboardData.currentIdeaId}
-                    className="flex items-center space-x-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <Sheet className="w-4 h-4" />
-                    <span>Excel</span>
-                  </button>
+                  {/* Dropdown */}
+                  <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
+                    <button
+                      onClick={() => handleExport('pdf')}
+                      disabled={isExporting || !dashboardData.currentIdeaId}
+                      className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 first:rounded-t-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>Export as PDF</span>
+                    </button>
+                    <button
+                      onClick={() => handleExport('excel')}
+                      disabled={isExporting || !dashboardData.currentIdeaId}
+                      className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-700 last:rounded-b-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Sheet className="w-4 h-4" />
+                      <span>Export as Excel</span>
+                    </button>
+                  </div>
                 </div>
               </PermissionWrapper>
               
@@ -190,12 +197,14 @@ export default function DashboardPage() {
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <input
                   type="text"
-                  placeholder="Search"
+                  placeholder="Search..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-64"
+                  className="pl-10 pr-4 py-2 bg-white/60 backdrop-blur-sm border border-white/30 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 focus:bg-white/80 transition-all duration-200 w-56 text-sm"
                 />
               </div>
+
+              <DarkModeToggle />
 
               <div className="flex items-center space-x-2 text-sm text-gray-600">
                 <span>Welcome, {profile?.fullName || profile?.email}</span>
@@ -213,9 +222,9 @@ export default function DashboardPage() {
         </header>
 
         {/* Dashboard Content */}
-        <main className="flex-1 overflow-auto">
-          <div className="p-6 space-y-6">
-            {/* Top Info Cards */}
+        <main className="flex-1 overflow-auto bg-gradient-to-br from-gray-50 to-blue-50/30 dark:from-gray-900 dark:to-blue-900/30 transition-all duration-500">
+          <div className="p-3 space-y-3 h-full">
+            {/* Compact Info Cards */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -230,65 +239,90 @@ export default function DashboardPage() {
                 savings={dashboardData.savings}
                 isLoading={isLoading}
                 onCompanyClick={() => console.log("Edit company")}
-                onSizeClick={() => console.log("Edit size")}
-                onCapexClick={() => console.log("View CAPEX details")}
-                onOpexClick={() => console.log("View OPEX details")}
+                onBudgetClick={() => console.log("View budget details")}
                 onTimelineClick={() => console.log("View timeline")}
                 onSavingsClick={() => console.log("View savings breakdown")}
+                agentIsActive={false}
+                agentCurrentStage={'vision'}
+                agentProgress={0}
               />
             </motion.div>
 
-            {/* Main Grid Layout */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Left Column - Chat Interface */}
+            {/* 12-Column Grid Layout */}
+            <motion.div 
+              className="grid grid-cols-12 gap-3 h-[calc(100vh-220px)]"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.4, delay: 0.2 }}
+            >
+              {/* Left Column - Chat Interface (7 columns) */}
               <motion.div
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3, delay: 0.1 }}
-                className="lg:col-span-2"
+                initial={{ opacity: 0, x: -30, scale: 0.95 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                transition={{ 
+                  duration: 0.5, 
+                  delay: 0.3,
+                  type: "spring",
+                  stiffness: 100,
+                  damping: 20
+                }}
+                className="col-span-12 xl:col-span-7 flex flex-col space-y-3 min-h-0"
               >
-                <div className="grid grid-cols-1 gap-6">
-                  {/* Chat Interface with AI Agent */}
-                  <div>
-                    <ChatInterface 
-                      onIdeaSubmit={handleIdeaSubmit}
-                      onAnalysisComplete={handleAnalysisComplete}
-                    />
-                  </div>
-                  
-                  {/* Charts Row */}
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                    <LazyCharts />
-                  </div>
-                </div>
+                {/* Chat Interface with AI Agent */}
+                <motion.div 
+                  className="flex-1 min-h-0"
+                  whileHover={{ scale: 1.005 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <ChatInterface 
+                    onIdeaSubmit={handleIdeaSubmit}
+                    onAnalysisComplete={handleAnalysisComplete}
+                    className="h-full"
+                  />
+                </motion.div>
+                
+                {/* Integrated Charts */}
+                <motion.div 
+                  className="h-64 flex-shrink-0"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, delay: 0.5 }}
+                  whileHover={{ 
+                    y: -2,
+                    transition: { duration: 0.2 }
+                  }}
+                >
+                  <TabbedChartInterface />
+                </motion.div>
               </motion.div>
 
-              {/* Right Column - Panels */}
+              {/* Right Column - Consolidated Panel (5 columns) */}
               <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3, delay: 0.2 }}
-                className="space-y-6"
+                initial={{ opacity: 0, x: 30, scale: 0.95 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                transition={{ 
+                  duration: 0.5, 
+                  delay: 0.4,
+                  type: "spring",
+                  stiffness: 100,
+                  damping: 20
+                }}
+                className="col-span-12 xl:col-span-5 min-h-0"
+                whileHover={{ 
+                  scale: 1.005,
+                  transition: { duration: 0.2 }
+                }}
               >
-                {/* Resource Panels */}
-                <ResourcePanels
+                <ConsolidatedRightPanel
+                  ideaId={dashboardData.currentIdeaId}
                   isLoading={isLoading}
                   onAddInternal={() => console.log("Add internal resource")}
                   onAddExternal={() => console.log("Add external resource")}
-                />
-                
-                {/* Risks Panel */}
-                {dashboardData.currentIdeaId && (
-                  <RisksPanel ideaId={dashboardData.currentIdeaId} />
-                )}
-                
-                {/* Technical Requirements Panel */}
-                <TechnicalPanel
-                  isLoading={isLoading}
                   onAddRequirement={() => console.log("Add technical requirement")}
+                  className="h-full"
                 />
               </motion.div>
-            </div>
+            </motion.div>
           </div>
         </main>
       </div>
