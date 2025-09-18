@@ -11,7 +11,10 @@
       "Bash(npm run build:*)",
       "Bash(mv:*)",
       "Bash(cmd /c \"move finance-planner finance-planner-backup\")",
-      "Bash(npm run lint)"
+      "Bash(npm run lint)",
+      "Bash(cmd /c:*)",
+      "Bash(npx kill-port:*)",
+      "Bash(npm run lint:*)"
     ],
     "deny": [],
     "ask": []

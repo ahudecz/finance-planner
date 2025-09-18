@@ -22,9 +22,10 @@ import { aiAgent, AIAgentState, AITodoItem, ReasoningStep } from "@/lib/services
 
 interface AIAgentDisplayProps {
   className?: string;
+  isDarkMode?: boolean;
 }
 
-export function AIAgentDisplay({ className }: AIAgentDisplayProps) {
+export function AIAgentDisplay({ className, isDarkMode = false }: AIAgentDisplayProps) {
   const [agentState, setAgentState] = useState<AIAgentState>(aiAgent.getState());
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     thinking: true,
@@ -45,31 +46,35 @@ export function AIAgentDisplay({ className }: AIAgentDisplayProps) {
     }));
   };
 
-  if (!agentState.isActive && agentState.todoList.length === 0) {
+  if (!agentState.isActive && (!agentState.todoList || agentState.todoList.length === 0)) {
     return null;
   }
 
   return (
-    <div className={clsx("bg-white rounded-xl border border-blue-200 p-4 space-y-4", className)}>
+    <div className={clsx(
+      "rounded-xl border p-3 space-y-3 text-xs",
+      isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-blue-200",
+      className
+    )}>
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-            <Brain className="w-5 h-5 text-white" />
+        <div className="flex items-center space-x-2">
+          <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+            <Brain className="w-3 h-3 text-white" />
           </div>
           <div>
-            <h3 className="font-semibold text-gray-900">AI Business Analyst</h3>
-            <p className="text-sm text-gray-500">
+            <h3 className={clsx("font-semibold text-xs", isDarkMode ? "text-white" : "text-gray-900")}>AI Business Analyst</h3>
+            <p className={clsx("text-xs", isDarkMode ? "text-gray-400" : "text-gray-500")}>
               {agentState.isActive ? "Analyzing..." : "Analysis Complete"}
             </p>
           </div>
         </div>
         <div className="flex items-center space-x-1">
           <div className={clsx(
-            "w-2 h-2 rounded-full",
+            "w-1.5 h-1.5 rounded-full",
             agentState.isActive ? "bg-green-500 animate-pulse" : "bg-gray-400"
           )}></div>
-          <span className="text-xs text-gray-500">
+          <span className={clsx("text-xs", isDarkMode ? "text-gray-400" : "text-gray-500")}>
             {agentState.isActive ? "Active" : "Idle"}
           </span>
         </div>
@@ -80,19 +85,19 @@ export function AIAgentDisplay({ className }: AIAgentDisplayProps) {
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-blue-50 rounded-lg p-4"
+          className={clsx("rounded-lg p-3", isDarkMode ? "bg-blue-900" : "bg-blue-50")}
         >
           <button
             onClick={() => toggleSection('thinking')}
             className="flex items-center justify-between w-full text-left"
           >
             <div className="flex items-center space-x-2">
-              <Lightbulb className="w-4 h-4 text-blue-600" />
-              <span className="font-medium text-gray-900">Current Thinking</span>
+              <Lightbulb className="w-3 h-3 text-blue-600" />
+              <span className={clsx("font-medium text-xs", isDarkMode ? "text-white" : "text-gray-900")}>Current Thinking</span>
             </div>
             {expandedSections.thinking ? 
-              <ChevronDown className="w-4 h-4 text-gray-500" /> : 
-              <ChevronRight className="w-4 h-4 text-gray-500" />
+              <ChevronDown className={clsx("w-3 h-3", isDarkMode ? "text-gray-400" : "text-gray-500")} /> : 
+              <ChevronRight className={clsx("w-3 h-3", isDarkMode ? "text-gray-400" : "text-gray-500")} />
             }
           </button>
           
@@ -102,34 +107,37 @@ export function AIAgentDisplay({ className }: AIAgentDisplayProps) {
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
                 exit={{ opacity: 0, height: 0 }}
-                className="mt-3 space-y-3"
+                className="mt-2 space-y-2"
               >
-                <div className="text-sm text-gray-800">
-                  <div className="flex items-start space-x-2 mb-2">
-                    <Brain className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
+                <div className={clsx("text-xs", isDarkMode ? "text-gray-200" : "text-gray-800")}>
+                  <div className="flex items-start space-x-2 mb-1">
+                    <Brain className="w-3 h-3 text-blue-600 mt-0.5 flex-shrink-0" />
                     <span className="font-medium">{agentState.currentThinking.currentThought}</span>
                   </div>
-                  <p className="text-gray-600 ml-6">{agentState.currentThinking.reasoning}</p>
+                  <p className={clsx("ml-5 text-xs", isDarkMode ? "text-gray-300" : "text-gray-600")}>{agentState.currentThinking.reasoning}</p>
                 </div>
 
                 {agentState.currentThinking.currentField && (
-                  <div className="bg-white rounded-md p-3 border border-blue-200">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <Target className="w-3 h-3 text-blue-600" />
-                      <span className="text-xs font-medium text-gray-700">Currently Working On</span>
+                  <div className={clsx(
+                    "rounded-md p-2 border",
+                    isDarkMode ? "bg-gray-700 border-blue-700" : "bg-white border-blue-200"
+                  )}>
+                    <div className="flex items-center space-x-1 mb-1">
+                      <Target className="w-2 h-2 text-blue-600" />
+                      <span className={clsx("text-xs font-medium", isDarkMode ? "text-gray-300" : "text-gray-700")}>Currently Working On</span>
                     </div>
-                    <span className="text-sm text-gray-900 capitalize">
+                    <span className={clsx("text-xs capitalize", isDarkMode ? "text-white" : "text-gray-900")}>
                       {agentState.currentThinking.currentField.replace('_', ' ')}
                     </span>
                   </div>
                 )}
 
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-500">
+                  <span className={clsx(isDarkMode ? "text-gray-400" : "text-gray-500")}>
                     Confidence: {Math.round(agentState.currentThinking.confidence * 100)}%
                   </span>
                   <div className="flex items-center space-x-1">
-                    <div className="w-16 bg-gray-200 rounded-full h-1.5">
+                    <div className={clsx("w-16 rounded-full h-1.5", isDarkMode ? "bg-gray-700" : "bg-gray-200")}>
                       <motion.div
                         className="bg-blue-600 h-1.5 rounded-full"
                         initial={{ width: 0 }}
@@ -140,12 +148,12 @@ export function AIAgentDisplay({ className }: AIAgentDisplayProps) {
                   </div>
                 </div>
 
-                {agentState.currentThinking.nextSteps.length > 0 && (
+                {agentState.currentThinking.nextSteps && agentState.currentThinking.nextSteps.length > 0 && (
                   <div className="text-xs">
-                    <span className="text-gray-600 font-medium">Next Steps:</span>
-                    <ul className="mt-1 space-y-1">
+                    <span className={clsx("font-medium", isDarkMode ? "text-gray-300" : "text-gray-600")}>Next Steps:</span>
+                    <ul className="mt-1 space-y-0.5">
                       {agentState.currentThinking.nextSteps.map((step, index) => (
-                        <li key={index} className="flex items-start space-x-2 text-gray-600">
+                        <li key={index} className={clsx("flex items-start space-x-1", isDarkMode ? "text-gray-400" : "text-gray-600")}>
                           <span className="text-blue-600">•</span>
                           <span>{step}</span>
                         </li>
@@ -154,13 +162,13 @@ export function AIAgentDisplay({ className }: AIAgentDisplayProps) {
                   </div>
                 )}
 
-                {agentState.currentThinking.uncertainties.length > 0 && (
+                {agentState.currentThinking.uncertainties && agentState.currentThinking.uncertainties.length > 0 && (
                   <div className="text-xs">
                     <span className="text-orange-600 font-medium">Uncertainties:</span>
-                    <ul className="mt-1 space-y-1">
+                    <ul className="mt-1 space-y-0.5">
                       {agentState.currentThinking.uncertainties.map((uncertainty, index) => (
-                        <li key={index} className="flex items-start space-x-2 text-orange-600">
-                          <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                        <li key={index} className="flex items-start space-x-1 text-orange-600">
+                          <AlertTriangle className="w-2 h-2 mt-0.5 flex-shrink-0" />
                           <span>{uncertainty}</span>
                         </li>
                       ))}
@@ -174,22 +182,22 @@ export function AIAgentDisplay({ className }: AIAgentDisplayProps) {
       )}
 
       {/* Todo List */}
-      {agentState.todoList.length > 0 && (
-        <div className="bg-gray-50 rounded-lg p-4">
+      {agentState.todoList && agentState.todoList.length > 0 && (
+        <div className={clsx("rounded-lg p-3", isDarkMode ? "bg-gray-700" : "bg-gray-50")}>
           <button
             onClick={() => toggleSection('todos')}
-            className="flex items-center justify-between w-full text-left mb-3"
+            className="flex items-center justify-between w-full text-left mb-2"
           >
             <div className="flex items-center space-x-2">
-              <CheckCircle className="w-4 h-4 text-green-600" />
-              <span className="font-medium text-gray-900">Analysis Tasks</span>
-              <span className="text-xs text-gray-500">
-                ({agentState.todoList.filter(t => t.status === 'completed').length}/{agentState.todoList.length})
+              <CheckCircle className="w-3 h-3 text-green-600" />
+              <span className={clsx("font-medium text-xs", isDarkMode ? "text-white" : "text-gray-900")}>Analysis Tasks</span>
+              <span className={clsx("text-xs", isDarkMode ? "text-gray-400" : "text-gray-500")}>
+                ({(agentState.todoList || []).filter(t => t.status === 'completed').length}/{(agentState.todoList || []).length})
               </span>
             </div>
             {expandedSections.todos ? 
-              <ChevronDown className="w-4 h-4 text-gray-500" /> : 
-              <ChevronRight className="w-4 h-4 text-gray-500" />
+              <ChevronDown className={clsx("w-3 h-3", isDarkMode ? "text-gray-400" : "text-gray-500")} /> : 
+              <ChevronRight className={clsx("w-3 h-3", isDarkMode ? "text-gray-400" : "text-gray-500")} />
             }
           </button>
 
@@ -201,8 +209,8 @@ export function AIAgentDisplay({ className }: AIAgentDisplayProps) {
                 exit={{ opacity: 0, height: 0 }}
                 className="space-y-2"
               >
-                {agentState.todoList.map((todo) => (
-                  <TodoItem key={todo.id} todo={todo} />
+                {(agentState.todoList || []).map((todo) => (
+                  <TodoItem key={todo.id} todo={todo} isDarkMode={isDarkMode} />
                 ))}
               </motion.div>
             )}
@@ -211,7 +219,7 @@ export function AIAgentDisplay({ className }: AIAgentDisplayProps) {
       )}
 
       {/* Reasoning History */}
-      {agentState.reasoningHistory.length > 0 && (
+      {agentState.reasoningHistory && agentState.reasoningHistory.length > 0 && (
         <div className="bg-purple-50 rounded-lg p-4">
           <button
             onClick={() => toggleSection('reasoning')}
@@ -221,7 +229,7 @@ export function AIAgentDisplay({ className }: AIAgentDisplayProps) {
               <TrendingUp className="w-4 h-4 text-purple-600" />
               <span className="font-medium text-gray-900">Reasoning History</span>
               <span className="text-xs text-gray-500">
-                ({agentState.reasoningHistory.length} steps)
+                ({(agentState.reasoningHistory || []).length} steps)
               </span>
             </div>
             {expandedSections.reasoning ? 
@@ -238,7 +246,7 @@ export function AIAgentDisplay({ className }: AIAgentDisplayProps) {
                 exit={{ opacity: 0, height: 0 }}
                 className="space-y-3"
               >
-                {agentState.reasoningHistory.map((step) => (
+                {(agentState.reasoningHistory || []).map((step) => (
                   <ReasoningStepDisplay key={step.id} step={step} />
                 ))}
               </motion.div>
@@ -248,14 +256,14 @@ export function AIAgentDisplay({ className }: AIAgentDisplayProps) {
       )}
 
       {/* Field Progress */}
-      {Object.keys(agentState.fieldProgress).length > 0 && (
+      {agentState.fieldProgress && Object.keys(agentState.fieldProgress).length > 0 && (
         <div className="bg-green-50 rounded-lg p-4">
           <h4 className="font-medium text-gray-900 mb-3 flex items-center space-x-2">
             <Target className="w-4 h-4 text-green-600" />
             <span>Field Analysis Progress</span>
           </h4>
           <div className="grid grid-cols-2 gap-3">
-            {Object.entries(agentState.fieldProgress).map(([field, progress]) => (
+            {Object.entries(agentState.fieldProgress || {}).map(([field, progress]) => (
               <FieldProgressDisplay key={field} field={field} progress={progress} />
             ))}
           </div>
@@ -265,7 +273,7 @@ export function AIAgentDisplay({ className }: AIAgentDisplayProps) {
   );
 }
 
-function TodoItem({ todo }: { todo: AITodoItem }) {
+function TodoItem({ todo, isDarkMode = false }: { todo: AITodoItem; isDarkMode?: boolean }) {
   const [expandedOutcome, setExpandedOutcome] = useState(false);
 
   const getStatusIcon = (status: AITodoItem['status']) => {
@@ -287,7 +295,10 @@ function TodoItem({ todo }: { todo: AITodoItem }) {
     <motion.div
       initial={{ opacity: 0, x: -10 }}
       animate={{ opacity: 1, x: 0 }}
-      className="bg-white rounded-md border border-gray-200 overflow-hidden"
+      className={clsx(
+        "rounded-md border overflow-hidden",
+        isDarkMode ? "bg-gray-700 border-gray-600" : "bg-white border-gray-200"
+      )}
     >
       <div className="flex items-start space-x-3 p-3">
         {getStatusIcon(todo.status)}
@@ -442,11 +453,11 @@ function ReasoningStepDisplay({ step }: { step: ReasoningStep }) {
               <p className="text-xs text-purple-700 mt-1">{step.decision}</p>
             </div>
 
-            {step.toolsConsidered.length > 0 && (
+            {step.toolsConsidered && step.toolsConsidered.length > 0 && (
               <div className="text-xs">
                 <span className="font-medium text-gray-600">Tools Used:</span>
                 <div className="flex flex-wrap gap-1 mt-1">
-                  {step.toolsConsidered.map((tool, index) => (
+                  {(step.toolsConsidered || []).map((tool, index) => (
                     <span key={index} className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs">
                       {tool}
                     </span>
@@ -455,13 +466,13 @@ function ReasoningStepDisplay({ step }: { step: ReasoningStep }) {
               </div>
             )}
 
-            {step.calculationSteps && step.calculationSteps.length > 0 && (
+            {step.calculationSteps && Array.isArray(step.calculationSteps) && step.calculationSteps.length > 0 && (
               <div className="bg-blue-50 rounded-md p-2">
                 <div className="flex items-center space-x-1 mb-2">
                   <Calculator className="w-3 h-3 text-blue-600" />
                   <span className="text-xs font-medium text-blue-800">Calculations:</span>
                 </div>
-                {step.calculationSteps.map((calc, index) => (
+                {(step.calculationSteps || []).map((calc, index) => (
                   <div key={index} className="text-xs space-y-1 mb-2 last:mb-0">
                     <div className="font-medium text-blue-900">{calc.description}</div>
                     <div className="text-blue-700 font-mono">{calc.formula}</div>

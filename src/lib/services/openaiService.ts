@@ -60,18 +60,8 @@ export class OpenAIBusinessAnalyst {
       return userPreferredModel;
     }
     
-    // Future-ready: Will use GPT-5 when it becomes available
-    const preferredModels = [
-      "gpt-5",              // Future model - not yet available
-      "gpt-4o",             // Latest GPT-4 variant (faster, multimodal)  
-      "gpt-4-turbo",        // Current best for complex analysis
-      "gpt-4-turbo-preview", // Fallback option
-      "gpt-4"               // Final fallback
-    ];
-
-    // For now, return the best currently available model
-    // TODO: Add model availability checking when OpenAI provides API for this
-    return "gpt-4o"; // Using GPT-4o as the best current option
+    // Using o3-mini as the primary model for consistency with project validation
+    return "o3-mini";
   }
   
   async analyzeBusinessIdea(request: OpenAIAnalysisRequest): Promise<OpenAIAnalysisResult> {
@@ -83,16 +73,25 @@ export class OpenAIBusinessAnalyst {
     const userPrompt = this.buildUserPrompt(request);
 
     try {
-      const completion = await openai.chat.completions.create({
+      const apiParams: any = {
         model: this.model,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt }
         ],
-        response_format: { type: "json_object" },
-        temperature: 0.7,
-        max_tokens: 4000
-      });
+        response_format: { type: "json_object" }
+      };
+
+      // Use correct parameters based on model
+      if (this.model === "o3-mini") {
+        apiParams.max_completion_tokens = 8000;
+        apiParams.reasoning_effort = "low"; // Use low for better token efficiency
+      } else {
+        apiParams.max_tokens = 4000;
+        apiParams.temperature = 0.3;
+      }
+
+      const completion = await openai.chat.completions.create(apiParams);
 
       const response = completion.choices[0].message.content;
       if (!response) {
@@ -115,11 +114,45 @@ export class OpenAIBusinessAnalyst {
     } catch (error) {
       console.error(`❌ OpenAI Analysis (${this.model}) failed - Stage: ${request.stage}:`, error);
       
-      // If GPT-4o fails, try fallback to GPT-4-turbo
-      if (this.model === "gpt-4o") {
-        console.log('🔄 Falling back to GPT-4-turbo...');
-        this.model = "gpt-4-turbo";
-        return this.analyzeBusinessIdea(request); // Retry with fallback model
+      // If o3-mini fails, try fallback to GPT-4o with compatible parameters
+      if (this.model === "o3-mini") {
+        console.log('🔄 Falling back to GPT-4o...');
+        this.model = "gpt-4o";
+        
+        // Retry with GPT-4o using compatible parameters
+        try {
+          const fallbackCompletion = await openai.chat.completions.create({
+            model: this.model,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt }
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.3,
+            max_tokens: 4000 // GPT-4o uses max_tokens, not max_completion_tokens
+          });
+
+          const fallbackResponse = fallbackCompletion.choices[0].message.content;
+          if (!fallbackResponse) {
+            throw new Error('No response from fallback model');
+          }
+
+          const parsed = JSON.parse(fallbackResponse);
+          const processingTime = Date.now() - startTime;
+
+          console.log(`✅ OpenAI Fallback Analysis (${this.model}) completed - Stage: ${request.stage}`);
+
+          return {
+            thinking: parsed.thinking,
+            analysis: parsed.analysis,
+            calculations: parsed.calculations,
+            confidence: parsed.thinking?.confidence || 0.8,
+            processingTime
+          };
+        } catch (fallbackError) {
+          console.error(`❌ Fallback model also failed:`, fallbackError);
+          throw new Error(`OpenAI analysis failed with both o3-mini and GPT-4o: ${fallbackError}`);
+        }
       }
       
       throw new Error(`OpenAI analysis failed with ${this.model}: ${error}`);
@@ -359,12 +392,22 @@ Think step by step and show your reasoning!`;
 
   async testConnection(): Promise<boolean> {
     try {
-      const response = await openai.chat.completions.create({
+      const apiParams: any = {
         model: this.model,
-        messages: [{ role: "user", content: `Hello! Please respond with a simple JSON: {"status": "connected", "model": "${this.model}", "ready_for_gpt5": true}` }],
-        response_format: { type: "json_object" },
-        max_tokens: 100
-      });
+        messages: [{ role: "user", content: `Hello! Please respond with a simple JSON: {"status": "connected", "model": "${this.model}", "ready": true}` }],
+        response_format: { type: "json_object" }
+      };
+
+      // Use correct parameters based on model
+      if (this.model === "o3-mini") {
+        apiParams.max_completion_tokens = 500;
+        apiParams.reasoning_effort = "low"; // Use low for better token efficiency
+      } else {
+        apiParams.max_tokens = 100;
+        apiParams.temperature = 0.3;
+      }
+
+      const response = await openai.chat.completions.create(apiParams);
 
       const result = JSON.parse(response.choices[0].message.content || '{}');
       console.log(`✅ OpenAI connection test successful with ${this.model}:`, result);
@@ -373,19 +416,20 @@ Think step by step and show your reasoning!`;
       console.error(`❌ OpenAI connection test failed with ${this.model}:`, error);
       
       // Try fallback model for connection test
-      if (this.model === "gpt-4o") {
-        console.log('🔄 Testing connection with fallback model...');
+      if (this.model === "o3-mini") {
+        console.log('🔄 Testing connection with fallback model GPT-4o...');
         try {
           const fallbackResponse = await openai.chat.completions.create({
-            model: "gpt-4-turbo",
-            messages: [{ role: "user", content: `Hello! Please respond with a simple JSON: {"status": "connected", "model": "gpt-4-turbo", "fallback": true}` }],
+            model: "gpt-4o",
+            messages: [{ role: "user", content: `Hello! Please respond with a simple JSON: {"status": "connected", "model": "gpt-4o", "fallback": true}` }],
             response_format: { type: "json_object" },
-            max_tokens: 100
+            max_tokens: 100,
+            temperature: 0.3
           });
           
           const fallbackResult = JSON.parse(fallbackResponse.choices[0].message.content || '{}');
           console.log('✅ OpenAI fallback connection successful:', fallbackResult);
-          this.model = "gpt-4-turbo"; // Switch to working model
+          this.model = "gpt-4o"; // Switch to working model
           return true;
         } catch (fallbackError) {
           console.error('❌ Fallback connection also failed:', fallbackError);

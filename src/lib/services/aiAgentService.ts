@@ -297,8 +297,11 @@ export class AIAgentEngine {
     // Execute the step
     const result = await stepFunction();
     
-    // Wait for confirmation before proceeding
-    await this.waitForStepConfirmation(todoId, result);
+    // TODO: Implement proper question UI - for now skip confirmation
+    // await this.waitForStepConfirmation(todoId, result);
+    
+    // Add a small delay to show progress
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
     // Mark todo as completed
     this.updateTodoStatus(todoId, 'completed');

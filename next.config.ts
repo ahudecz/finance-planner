@@ -1,22 +1,22 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Turbopack configuration (moved from experimental.turbo)
-  turbopack: {
-    rules: {
-      '*.svg': {
-        loaders: ['@svgr/webpack'],
-        as: '*.js'
-      }
+  // Basic Turbopack configuration - keep minimal for compatibility
+  experimental: {
+    // Enable Turbopack for dev (but remove conflicting webpack config)
+    turbo: {
+      // Remove SVG loader configuration as it's webpack-specific
+      // SVG imports will work with default Next.js handling
     }
   },
   
-  // Server external packages (moved from experimental.serverComponentsExternalPackages)
+  // Server external packages for better performance
   serverExternalPackages: ['@nivo/core', '@nivo/pie', '@nivo/bar', '@nivo/line', '@nivo/heatmap'],
   
-  // Webpack optimizations for development
-  webpack: (config, { dev, isServer }) => {
-    if (dev) {
+  // Only apply webpack config when NOT using Turbopack (i.e., in production builds)
+  webpack: (config, { dev, isServer, webpack }) => {
+    // Only apply webpack optimizations in production or when not using Turbopack
+    if (!dev || process.env.TURBOPACK !== '1') {
       // Enable filesystem caching for faster rebuilds
       config.cache = {
         type: 'filesystem',
@@ -57,13 +57,10 @@ const nextConfig: NextConfig = {
     return config;
   },
   
-  // Development server optimizations
+  // Turbopack-compatible development optimizations
   ...(process.env.NODE_ENV === 'development' && {
-    onDemandEntries: {
-      // Keep pages in memory longer during development
-      maxInactiveAge: 60 * 1000 * 60, // 1 hour
-      pagesBufferLength: 5
-    }
+    // Remove onDemandEntries as it's webpack-specific
+    // Turbopack handles this automatically
   })
 };
 

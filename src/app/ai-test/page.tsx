@@ -1,609 +1,1061 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { 
   Brain, 
   Play, 
-  Pause, 
   RotateCcw, 
-  CheckCircle, 
-  AlertTriangle, 
-  ArrowRight, 
   Lightbulb,
-  MessageSquare,
-  Settings,
-  ChevronDown,
-  ChevronRight
+  Moon,
+  Sun,
+  Send,
+  CheckCircle,
+  AlertCircle,
+  Clock,
+  Building2,
+  Zap,
+  Bot
 } from "lucide-react";
 import { clsx } from "clsx";
-import { aiAgent, AIAgentState } from "@/lib/services/aiAgentService";
-import { AIAgentDisplay } from "@/components/AIAgentDisplay";
-import { AgentTodoList } from "@/components/AgentTodoList";
+import { ConversationState, ValidationResult } from "@/lib/services/projectValidationService";
+import { ProjectValidationMessage } from "@/components/ProjectValidationMessage";
 
-interface ConfirmationStep {
+interface ThinkingStep {
+  step: number;
+  total: number;
+  content: string;
+}
+
+interface DebugLogEntry {
   id: string;
+  timestamp: Date;
+  type: 'api_call' | 'thinking' | 'qualification' | 'validation' | 'company_search' | 'response' | 'ai_success' | 'fallback_mode' | 'error_fallback' | 'ai_parse_failure' | 'ai_missing_score' | 'api_error_fallback';
   title: string;
-  description: string;
-  completed: boolean;
-  needsConfirmation: boolean;
-  result?: any;
+  details: any;
+  duration?: number;
+}
+
+interface ChatMessage {
+  id: string;
+  type: 'user' | 'ai' | 'system' | 'validation' | 'welcome' | 'thinking' | 'analysis';
+  content: string;
+  timestamp: Date;
+  validation?: ValidationResult;
+  status?: 'pending' | 'in_progress' | 'completed' | 'error';
+  thinkingSteps?: ThinkingStep[];
+  fallbackMode?: 'quick' | 'error' | null;
+  analysisDetails?: {
+    inputLength: number;
+    model: string;
+    context: string;
+    expectedTime: string;
+  };
+}
+
+interface ProjectValidationState {
+  conversationState: ConversationState | null;
+  isLoading: boolean;
+  hasValidProject: boolean;
+  companyName?: string;
+}
+
+// TODO: REMOVE THIS INTERFACE WHEN LANGCHAIN TEST BLOCK IS REMOVED
+interface OpenAITestState {
+  isLoading: boolean;
+  result: string | null;
+  error: string | null;
+  prompt: string;
 }
 
 export default function AITestPage() {
-  const [agentState, setAgentState] = useState<AIAgentState>(aiAgent.getState());
-  const [businessIdea, setBusinessIdea] = useState("");
-  const [currentStep, setCurrentStep] = useState<string | null>(null);
-  const [waitingForConfirmation, setWaitingForConfirmation] = useState(false);
-  const [completedSteps, setCompletedSteps] = useState<ConfirmationStep[]>([]);
-  const [currentStepData, setCurrentStepData] = useState<ConfirmationStep | null>(null);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [currentMessage, setCurrentMessage] = useState("");
+  const [validationState, setValidationState] = useState<ProjectValidationState>({
+    conversationState: null,
+    isLoading: false,
+    hasValidProject: false
+  });
+  const [currentThinking, setCurrentThinking] = useState<ThinkingStep | null>(null);
+  const [debugLogs, setDebugLogs] = useState<DebugLogEntry[]>([]);
+  const [showDebugPanel, setShowDebugPanel] = useState(true);
+  const [currentFallbackMode, setCurrentFallbackMode] = useState<'quick' | 'error' | null>(null);
   
-  const confirmationSteps: ConfirmationStep[] = [
-    {
-      id: 'plan',
-      title: 'Analysis Plan Created',
-      description: 'The AI has created an analysis plan based on your business idea. Review the planned approach.',
-      completed: false,
-      needsConfirmation: true
-    },
-    {
-      id: 'concept',
-      title: 'Business Concept Analysis',
-      description: 'The AI has analyzed your business concept and classified it. Review the understanding.',
-      completed: false,
-      needsConfirmation: true
-    },
-    {
-      id: 'market',
-      title: 'Market Research Complete',
-      description: 'Market size and competition analysis is done. Review the market insights.',
-      completed: false,
-      needsConfirmation: true
-    },
-    {
-      id: 'technical',
-      title: 'Technical Requirements Analysis',
-      description: 'Technical architecture and platform requirements have been determined.',
-      completed: false,
-      needsConfirmation: true
-    },
-    {
-      id: 'budget',
-      title: 'Budget Calculations',
-      description: 'CAPEX and OPEX estimates have been calculated based on requirements.',
-      completed: false,
-      needsConfirmation: true
-    },
-    {
-      id: 'timeline',
-      title: 'Timeline Estimation',
-      description: 'Development timeline and milestones have been estimated.',
-      completed: false,
-      needsConfirmation: true
-    },
-    {
-      id: 'risks',
-      title: 'Risk Assessment',
-      description: 'Potential risks and mitigation strategies have been identified.',
-      completed: false,
-      needsConfirmation: true
-    },
-    {
-      id: 'complete',
-      title: 'Analysis Complete',
-      description: 'Full business analysis is complete and ready for review.',
-      completed: false,
-      needsConfirmation: false
-    }
-  ];
+  // TODO: REMOVE THIS STATE WHEN LANGCHAIN TEST BLOCK IS REMOVED
+  // OpenAI Test State
+  const [openaiTest, setOpenaiTest] = useState<OpenAITestState>({
+    isLoading: false,
+    result: null,
+    error: null,
+    prompt: "Hello! Please respond with a simple greeting and tell me what you are."
+  });
 
+  // Initialize the conversation on component mount
   useEffect(() => {
-    const unsubscribe = aiAgent.subscribe(setAgentState);
-    return unsubscribe;
+    initializeConversation();
   }, []);
 
-  // Monitor agent state for step completion and confirmation requests
-  useEffect(() => {
-    // Handle waiting for confirmation
-    if (agentState.waitingForConfirmation && !waitingForConfirmation) {
-      const currentTodo = agentState.todoList.find(todo => todo.status === 'in_progress');
-      if (currentTodo) {
-        const stepMapping: Record<string, string> = {
-          'clarify-project-type': 'plan',
-          'gather-context': 'concept',
-          'get-approval': 'concept',
-          'understand-concept': 'concept',
-          'market-research': 'market', 
-          'technical-analysis': 'technical',
-          'budget-calculation': 'budget',
-          'timeline-estimation': 'timeline',
-          'risk-assessment': 'risks'
+  // Helper function to add debug log entries
+  const addDebugLog = (type: DebugLogEntry['type'], title: string, details: any, duration?: number) => {
+    const logEntry: DebugLogEntry = {
+      id: `debug-${Date.now()}-${Math.random()}`,
+      timestamp: new Date(),
+      type,
+      title,
+      details,
+      duration
+    };
+    setDebugLogs(prev => [...prev, logEntry]);
+  };
+
+  const initializeConversation = async () => {
+    try {
+      const response = await fetch('/api/project-validation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'welcome' })
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        const welcomeMessage: ChatMessage = {
+          id: `welcome-${Date.now()}`,
+          type: 'welcome',
+          content: data.message,
+          timestamp: new Date()
         };
         
-        const stepId = stepMapping[currentTodo.id];
-        if (stepId) {
-          handleStepComplete(stepId);
+        setChatMessages([welcomeMessage]);
+        setValidationState(prev => ({
+          ...prev,
+          conversationState: data.conversationState
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to initialize conversation:', error);
+    }
+  };
+
+  const handleSendMessage = async () => {
+    if (!currentMessage.trim() || validationState.isLoading || !validationState.conversationState) return;
+    
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      type: 'user',
+      content: currentMessage,
+      timestamp: new Date()
+    };
+    
+    setChatMessages(prev => [...prev, userMessage]);
+    const messageToProcess = currentMessage;
+    setCurrentMessage("");
+    setValidationState(prev => ({ ...prev, isLoading: true }));
+    setCurrentThinking(null);
+    setCurrentFallbackMode(null);
+    
+    // Add debug log for starting request
+    const requestStartTime = Date.now();
+    addDebugLog('api_call', 'Starting Project Validation Request', {
+      input: messageToProcess,
+      stream: true,
+      conversationState: validationState.conversationState ? 'Present' : 'None'
+    });
+    
+    try {
+      const response = await fetch('/api/project-validation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'process',
+          input: messageToProcess,
+          conversationState: validationState.conversationState,
+          stream: true
+        })
+      });
+
+      if (response.body) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n');
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                
+                if (data.type === 'thinking') {
+                  setCurrentThinking({
+                    step: data.step,
+                    total: data.total,
+                    content: data.content
+                  });
+                  
+                  // Add debug log for thinking step
+                  addDebugLog('thinking', `AI Thinking Step ${data.step}/${data.total}`, {
+                    step: data.step,
+                    total: data.total,
+                    content: data.content
+                  });
+                } else if (data.type === 'analysis') {
+                  // Handle analysis status message
+                  const analysisMessage: ChatMessage = {
+                    id: `analysis-${Date.now()}`,
+                    type: 'analysis',
+                    content: data.content,
+                    timestamp: new Date(),
+                    status: 'in_progress',
+                    analysisDetails: data.analysisDetails
+                  };
+                  
+                  setChatMessages(prev => [...prev, analysisMessage]);
+                } else if (data.type === 'debug') {
+                  // Handle debug messages from backend
+                  addDebugLog(data.category as DebugLogEntry['type'], data.title, data.details);
+                  
+                  // Track fallback mode
+                  if (data.category === 'fallback_mode') {
+                    setCurrentFallbackMode('quick');
+                  } else if (data.category === 'error_fallback') {
+                    setCurrentFallbackMode('error');
+                  } else if (data.category === 'ai_success') {
+                    setCurrentFallbackMode(null);
+                  }
+                } else if (data.type === 'result' && data.success) {
+                  setCurrentThinking(null);
+                  
+                  // Remove the analysis message and replace with final result
+                  const aiMessage: ChatMessage = {
+                    id: `ai-${Date.now()}`,
+                    type: data.validation ? 'validation' : 'ai',
+                    content: data.message,
+                    timestamp: new Date(),
+                    validation: data.validation,
+                    fallbackMode: currentFallbackMode
+                  };
+                  
+                  setChatMessages(prev => {
+                    // Remove any analysis messages and add the final result
+                    const filteredMessages = prev.filter(msg => msg.type !== 'analysis');
+                    return [...filteredMessages, aiMessage];
+                  });
+                  
+                  // Add debug log for final response
+                  const requestDuration = Date.now() - requestStartTime;
+                  addDebugLog('response', 'AI Response Generated', {
+                    hasValidation: !!data.validation,
+                    hasValidProject: data.conversationState?.hasValidProject,
+                    companyName: data.conversationState?.companyName,
+                    companyInfo: data.conversationState?.companyInfo,
+                    qualificationResult: data.validation?.qualificationResult
+                  }, requestDuration);
+                  
+                  setValidationState(prev => ({
+                    ...prev,
+                    conversationState: data.conversationState,
+                    hasValidProject: data.conversationState.hasValidProject,
+                    companyName: data.conversationState.companyName,
+                    isLoading: false
+                  }));
+                } else if (data.type === 'error') {
+                  setCurrentThinking(null);
+                  throw new Error(data.error);
+                }
+              } catch (parseError) {
+                console.error('Error parsing streaming data:', parseError);
+              }
+            }
+          }
+        }
+      } else {
+        // Fallback to regular request if streaming not supported
+        const data = await response.json();
+        
+        if (data.success) {
+          const aiMessage: ChatMessage = {
+            id: `ai-${Date.now()}`,
+            type: data.validation ? 'validation' : 'ai',
+            content: data.message,
+            timestamp: new Date(),
+            validation: data.validation
+          };
+          
+          setChatMessages(prev => [...prev, aiMessage]);
+          
+          setValidationState(prev => ({
+            ...prev,
+            conversationState: data.conversationState,
+            hasValidProject: data.conversationState.hasValidProject,
+            companyName: data.conversationState.companyName,
+            isLoading: false
+          }));
         }
       }
-    }
-    
-    // Handle final completion
-    if (!agentState.isActive && !agentState.waitingForConfirmation && agentState.todoList.length > 0) {
-      const completedTodos = agentState.todoList.filter(todo => todo.status === 'completed');
-      if (completedTodos.length === agentState.todoList.length) {
-        handleStepComplete('complete');
-      }
-    }
-  }, [agentState, waitingForConfirmation]);
-
-  const handleStepComplete = (stepId: string) => {
-    const step = confirmationSteps.find(s => s.id === stepId);
-    if (!step) return;
-    
-    setCurrentStepData({ ...step, completed: true });
-    
-    if (step.needsConfirmation) {
-      setCurrentStep(stepId);
-      setWaitingForConfirmation(true);
-    } else {
-      // Auto-proceed for steps that don't need confirmation
-      setCompletedSteps(prev => [...prev, { ...step, completed: true }]);
+    } catch (error) {
+      console.error('Failed to process message:', error);
+      setCurrentThinking(null);
+      
+      const errorMessage: ChatMessage = {
+        id: `error-${Date.now()}`,
+        type: 'system',
+        content: 'I encountered an error processing your message. Please try again.',
+        timestamp: new Date(),
+        status: 'error'
+      };
+      
+      setChatMessages(prev => [...prev, errorMessage]);
+      setValidationState(prev => ({ ...prev, isLoading: false }));
     }
   };
 
-  const handleConfirmStep = () => {
-    if (currentStepData) {
-      setCompletedSteps(prev => [...prev, currentStepData]);
-    }
-    setWaitingForConfirmation(false);
-    setCurrentStep(null);
-    setCurrentStepData(null);
-    
-    // Tell the AI agent to continue
-    aiAgent.confirmStep(true);
-  };
-
-  const handleStartAnalysis = async () => {
-    if (!businessIdea.trim()) return;
-    
-    // Reset state
-    setCompletedSteps([]);
-    setCurrentStep(null);
-    setWaitingForConfirmation(false);
-    
-    // Start with plan confirmation
-    setCurrentStepData({
-      id: 'plan',
-      title: 'Analysis Plan Created',
-      description: `The AI will analyze "${businessIdea}" through systematic steps: business concept understanding, market research, technical analysis, budget calculation, timeline estimation, and risk assessment.`,
-      completed: false,
-      needsConfirmation: true
+  const handleReset = async () => {
+    setChatMessages([]);
+    setCurrentMessage("");
+    setCurrentThinking(null);
+    setDebugLogs([]);
+    setValidationState({
+      conversationState: null,
+      isLoading: false,
+      hasValidProject: false
     });
-    setCurrentStep('plan');
-    setWaitingForConfirmation(true);
+    
+    // Reinitialize conversation
+    await initializeConversation();
   };
 
-  const handleProceedWithAnalysis = async () => {
-    setWaitingForConfirmation(false);
-    setCurrentStep(null);
+  // TODO: REMOVE THIS FUNCTION WHEN LANGCHAIN TEST BLOCK IS REMOVED
+  const testOpenAIAPI = async () => {
+    setOpenaiTest(prev => ({ ...prev, isLoading: true, result: null, error: null }));
     
-    // Add plan to completed steps
-    if (currentStepData) {
-      setCompletedSteps(prev => [...prev, { ...currentStepData, completed: true }]);
+    try {
+      const response = await fetch('/api/openai-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: "Hello! Please respond with a simple greeting and confirm you are working via LangChain." })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        setOpenaiTest(prev => ({ 
+          ...prev, 
+          isLoading: false, 
+          result: `✅ LangChain Connection successful!\nModel: ${data.model}\nProcessing Time: ${data.processingTime}ms\nResponse Type: ${data.responseType}\nResponse: ${data.response}\nTimestamp: ${data.timestamp}`,
+          error: null 
+        }));
+      } else {
+        setOpenaiTest(prev => ({ 
+          ...prev, 
+          isLoading: false, 
+          result: null,
+          error: `❌ LangChain Connection failed: ${data.error}\n${data.hint || ''}` 
+        }));
+      }
+    } catch (error) {
+      setOpenaiTest(prev => ({ 
+        ...prev, 
+        isLoading: false, 
+        result: null,
+        error: `❌ Network error: ${error instanceof Error ? error.message : 'Unknown error'}` 
+      }));
     }
-    
-    // Start the actual AI analysis
-    await aiAgent.startAnalysis(businessIdea);
   };
 
-  const handleReset = () => {
-    // Reset local state
-    setBusinessIdea("");
-    setCompletedSteps([]);
-    setCurrentStep(null);
-    setWaitingForConfirmation(false);
-    setCurrentStepData(null);
+  // TODO: REMOVE THIS FUNCTION WHEN LANGCHAIN TEST BLOCK IS REMOVED
+  const testOpenAIChat = async () => {
+    if (!openaiTest.prompt.trim()) return;
     
-    // Reset AI agent state
-    aiAgent.reset();
-  };
-
-  const getStepStatus = (stepId: string) => {
-    if (completedSteps.find(s => s.id === stepId)) return 'completed';
-    if (currentStep === stepId) return 'current';
-    return 'pending';
+    setOpenaiTest(prev => ({ ...prev, isLoading: true, result: null, error: null }));
+    
+    try {
+      const response = await fetch('/api/openai-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: openaiTest.prompt })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        setOpenaiTest(prev => ({ 
+          ...prev, 
+          isLoading: false, 
+          result: data.response,
+          error: null 
+        }));
+      } else {
+        setOpenaiTest(prev => ({ 
+          ...prev, 
+          isLoading: false, 
+          result: null,
+          error: `❌ Chat failed: ${data.error}` 
+        }));
+      }
+    } catch (error) {
+      setOpenaiTest(prev => ({ 
+        ...prev, 
+        isLoading: false, 
+        result: null,
+        error: `❌ Network error: ${error instanceof Error ? error.message : 'Unknown error'}` 
+      }));
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50 p-4">
-      <div className="max-w-6xl mx-auto space-y-6">
+    <div className={clsx(
+      "min-h-screen p-4 transition-colors duration-300",
+      isDarkMode 
+        ? "bg-gray-900 text-white" 
+        : "bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50"
+    )}>
+      <div className="max-w-full mx-auto space-y-6">
         {/* Header */}
         <div className="text-center space-y-4">
-          <div className="flex items-center justify-center space-x-3">
-            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-              <Brain className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">AI Agent Test Center</h1>
-              <p className="text-gray-600">Test the AI business analyst with step-by-step confirmations</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Input Section and Confirmation Dialog - Side by Side */}
-        <div className="flex gap-4 h-1/3">
-          {/* Business Idea Input - 40% width to match Analysis Progress below */}
-          <div className="w-2/5 bg-white rounded-xl shadow-lg border border-gray-200 p-6 flex flex-col">
-            <div className="flex-1 flex flex-col space-y-4">
-              <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <Lightbulb className="w-4 h-4 inline mr-2" />
-                  Business Idea to Analyze
-                </label>
-                <textarea
-                  value={businessIdea}
-                  onChange={(e) => setBusinessIdea(e.target.value)}
-                  placeholder="e.g., A mobile app that helps users find and book local fitness classes with real-time availability"
-                  className="w-full h-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none min-h-32"
-                  disabled={agentState.isActive || waitingForConfirmation}
-                />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center justify-center space-x-3 flex-1">
+              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+                <Brain className="w-6 h-6 text-white" />
               </div>
-              
-              <div className="flex flex-col space-y-2">
-                <button
-                  onClick={handleStartAnalysis}
-                  disabled={!businessIdea.trim() || agentState.isActive || waitingForConfirmation}
-                  className={clsx(
-                    "flex items-center justify-center space-x-2 px-4 py-2 rounded-lg font-medium transition-all",
-                    businessIdea.trim() && !agentState.isActive && !waitingForConfirmation
-                      ? "bg-blue-600 hover:bg-blue-700 text-white"
-                      : "bg-gray-300 text-gray-500 cursor-not-allowed"
-                  )}
-                >
-                  <Play className="w-4 h-4" />
-                  <span>Start AI Analysis</span>
-                </button>
-                
-                <button
-                  onClick={handleReset}
-                  disabled={agentState.isActive}
-                  className="flex items-center justify-center space-x-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-all"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  <span>Reset</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Business Concept Analysis - 60% width to match AI Agent below */}
-          <div className="w-3/5 h-full">
-            <AnimatePresence>
-              {waitingForConfirmation && currentStepData && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  className="bg-white rounded-xl shadow-xl border-2 border-blue-200 p-6 h-full flex flex-col"
-                >
-                  <div className="flex-1 flex flex-col space-y-4">
-                    <div className="flex items-start space-x-3">
-                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                        <MessageSquare className="w-5 h-5 text-blue-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-lg font-semibold text-gray-900">{currentStepData.title}</h3>
-                        <p className="text-gray-600 mt-1 text-sm">{currentStepData.description}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex-1 overflow-y-auto space-y-4">
-                      {currentStepData.id === 'plan' && (
-                        <div className="p-3 bg-gray-50 rounded-lg">
-                          <h4 className="font-medium text-gray-900 mb-2 text-sm">Analysis Plan:</h4>
-                          <ul className="space-y-1 text-xs text-gray-700">
-                            <li>• Business concept classification</li>
-                            <li>• Market research & competition</li>
-                            <li>• Technical requirements</li>
-                            <li>• CAPEX/OPEX calculations</li>
-                            <li>• Timeline & milestones</li>
-                            <li>• Risk assessment</li>
-                          </ul>
-                        </div>
-                      )}
-                      
-                      {/* Show step results */}
-                      {agentState.currentStepResult && currentStepData.id !== 'plan' && (
-                        <div className="p-3 bg-blue-50 rounded-lg">
-                          <h4 className="font-medium text-blue-900 mb-2 text-sm">Step Results:</h4>
-                          <div className="text-xs text-blue-800">
-                            <pre className="whitespace-pre-wrap font-mono text-xs bg-white p-2 rounded border max-h-32 overflow-y-auto">
-                              {JSON.stringify(agentState.currentStepResult, null, 2)}
-                            </pre>
-                          </div>
-                        </div>
-                      )}
-                      
-                      {/* Show current reasoning */}
-                      {agentState.currentThinking && (
-                        <div className="p-3 bg-purple-50 rounded-lg">
-                          <h4 className="font-medium text-purple-900 mb-2 text-sm">AI Reasoning:</h4>
-                          <div className="text-xs text-purple-800">
-                            <p><strong>Thought:</strong> {agentState.currentThinking.currentThought}</p>
-                            <p><strong>Reasoning:</strong> {agentState.currentThinking.reasoning}</p>
-                            <p><strong>Confidence:</strong> {Math.round(agentState.currentThinking.confidence * 100)}%</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="flex items-center justify-end space-x-3 pt-4 border-t">
-                      <button
-                        onClick={handleReset}
-                        className="px-3 py-2 text-gray-600 hover:text-gray-800 font-medium text-sm"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={currentStepData.id === 'plan' ? handleProceedWithAnalysis : handleConfirmStep}
-                        className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-all text-sm"
-                      >
-                        <span>{currentStepData.id === 'plan' ? 'Start Analysis' : 'Continue'}</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-
-        {/* Analysis Progress and AI Agent Display - Side by Side */}
-        {(completedSteps.length > 0 || agentState.isActive || waitingForConfirmation) && (
-          <div className="flex gap-4">
-            {/* Progress Steps - 40% width */}
-            <div className="w-2/5 space-y-4">
-              <AgentTodoList 
-                todos={agentState.todoList} 
-                title="Business Idea Analysis" 
-                className="bg-white shadow-lg border-gray-200"
-              />
-              <AnalysisProgressDropdown 
-                confirmationSteps={confirmationSteps}
-                completedSteps={completedSteps}
-                getStepStatus={getStepStatus}
-              />
-            </div>
-
-            {/* AI Agent Display - 60% width */}
-            {(agentState.isActive || agentState.todoList.length > 0) && (
-              <div className="w-3/5">
-                <AIAgentDisplay />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-interface ProgressStepItemProps {
-  step: ConfirmationStep;
-  status: 'completed' | 'current' | 'pending';
-  index: number;
-  completedStep?: ConfirmationStep;
-}
-
-function ProgressStepItem({ step, status, index, completedStep }: ProgressStepItemProps) {
-  const [expandedOutcome, setExpandedOutcome] = useState(false);
-  const hasOutcome = status === 'completed' && completedStep;
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: index * 0.1 }}
-      className={clsx(
-        "rounded-lg border transition-all overflow-hidden",
-        status === 'completed' && "bg-green-50 border-green-200",
-        status === 'current' && "bg-blue-50 border-blue-200",
-        status === 'pending' && "bg-gray-50 border-gray-200"
-      )}
-    >
-      <div className="flex items-center space-x-3 p-3">
-        <div className={clsx(
-          "w-8 h-8 rounded-full flex items-center justify-center",
-          status === 'completed' && "bg-green-100",
-          status === 'current' && "bg-blue-100",
-          status === 'pending' && "bg-gray-100"
-        )}>
-          {status === 'completed' ? (
-            <CheckCircle className="w-5 h-5 text-green-600" />
-          ) : status === 'current' ? (
-            <div className="w-3 h-3 bg-blue-600 rounded-full animate-pulse" />
-          ) : (
-            <div className="w-3 h-3 bg-gray-400 rounded-full" />
-          )}
-        </div>
-        
-        <div className="flex-1">
-          <h4 className={clsx(
-            "font-medium",
-            status === 'completed' && "text-green-900",
-            status === 'current' && "text-blue-900",
-            status === 'pending' && "text-gray-600"
-          )}>
-            {step.title}
-          </h4>
-          <p className={clsx(
-            "text-sm",
-            status === 'completed' && "text-green-700",
-            status === 'current' && "text-blue-700",
-            status === 'pending' && "text-gray-500"
-          )}>
-            {step.description}
-          </p>
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          {status === 'current' && (
-            <div className="text-blue-600 animate-pulse">
-              <AlertTriangle className="w-5 h-5" />
-            </div>
-          )}
-          {hasOutcome && (
-            <button
-              onClick={() => setExpandedOutcome(!expandedOutcome)}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              {expandedOutcome ? 
-                <ChevronDown className="w-4 h-4" /> : 
-                <ChevronRight className="w-4 h-4" />
-              }
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Expanded Outcome Section for Completed Steps */}
-      <AnimatePresence>
-        {hasOutcome && expandedOutcome && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="border-t border-green-100 bg-green-100 px-3 py-3"
-          >
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2 mb-2">
-                <CheckCircle className="w-3 h-3 text-green-600" />
-                <span className="text-xs font-medium text-green-800">Step Outcome</span>
-              </div>
-              
-              <div className="bg-white rounded-md p-2 border border-green-200">
-                <span className="text-xs font-medium text-gray-700">Result:</span>
-                <p className="text-xs text-gray-600 mt-1">
-                  Step completed successfully - {step.description}
+              <div>
+                <h1 className={clsx("text-2xl font-bold", isDarkMode ? "text-white" : "text-gray-900")}>AI Project Validator</h1>
+                <p className={clsx("text-sm", isDarkMode ? "text-gray-300" : "text-gray-600")}>
+                  Validate and structure your project initiatives with AI guidance
                 </p>
               </div>
-              
-              <div className="flex justify-between items-center text-xs text-green-700">
-                <span>Completed: Recently</span>
-                <span>Status: ✅ Confirmed</span>
+            </div>
+            <div className="flex items-center space-x-3">
+              {validationState.hasValidProject && validationState.conversationState?.companyInfo && (
+                <div className="flex items-center space-x-2">
+                  <Building2 className="w-4 h-4 text-blue-500" />
+                  <div className={clsx("text-xs", isDarkMode ? "text-gray-300" : "text-gray-600")}>
+                    <div className="font-medium">{validationState.conversationState.companyInfo.name}</div>
+                    <div className="flex items-center space-x-2 text-xs opacity-75">
+                      {validationState.conversationState.companyInfo.employees && (
+                        <span>👥 {validationState.conversationState.companyInfo.employees}</span>
+                      )}
+                      {validationState.conversationState.companyInfo.revenue && (
+                        <span>💰 {validationState.conversationState.companyInfo.revenue}</span>
+                      )}
+                      {validationState.conversationState.companyInfo.country && (
+                        <span>🌍 {validationState.conversationState.companyInfo.country}</span>
+                      )}
+                    </div>
+                  </div>
+                  <CheckCircle className="w-4 h-4 text-green-500" />
+                </div>
+              )}
+              {validationState.hasValidProject && validationState.companyName && !validationState.conversationState?.companyInfo && (
+                <div className="flex items-center space-x-2">
+                  <CheckCircle className="w-4 h-4 text-green-500" />
+                  <span className={clsx("text-xs", isDarkMode ? "text-gray-300" : "text-gray-600")}>
+                    Valid Project ({validationState.companyName})
+                  </span>
+                </div>
+              )}
+              <button
+                onClick={() => setShowDebugPanel(!showDebugPanel)}
+                className={clsx(
+                  "p-2 rounded-lg transition-colors text-sm",
+                  isDarkMode
+                    ? "bg-gray-800 hover:bg-gray-700 text-blue-400"
+                    : "bg-white hover:bg-gray-100 text-gray-600 border"
+                )}
+                title="Toggle Debug Panel"
+              >
+                <span className="text-xs font-mono">DEBUG</span>
+              </button>
+              <button
+                onClick={() => setIsDarkMode(!isDarkMode)}
+                className={clsx(
+                  "p-2 rounded-lg transition-colors text-sm",
+                  isDarkMode
+                    ? "bg-gray-800 hover:bg-gray-700 text-yellow-400"
+                    : "bg-white hover:bg-gray-100 text-gray-600 border"
+                )}
+              >
+                {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* 
+        =============================================================================
+        TODO: REMOVE THIS ENTIRE BLOCK WHEN EVERYTHING WORKS PROPERLY
+        =============================================================================
+        This is a temporary LangChain ChatOpenAI test panel used for debugging
+        o3-mini model compatibility. Once the main project validation is stable,
+        this entire block should be deleted from lines [CURRENT_LINE] to [END_LINE].
+        
+        The test confirms LangChain works with o3-mini, so it can be safely removed
+        once the main application is functioning correctly.
+        =============================================================================
+        */}
+        {false && ( // Set to true to show the test panel, false to hide it
+        <div className="max-w-4xl mx-auto mb-6">
+          <div className={clsx(
+            "rounded-xl shadow-lg border p-6",
+            isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+          )}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-blue-600 rounded-full flex items-center justify-center">
+                  <Zap className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h3 className={clsx("font-semibold text-lg", isDarkMode ? "text-white" : "text-gray-900")}>
+                    LangChain ChatOpenAI Test
+                  </h3>
+                  <p className={clsx("text-sm", isDarkMode ? "text-gray-300" : "text-gray-600")}>
+                    Test LangChain's ChatOpenAI wrapper with o3-mini model
+                  </p>
+                </div>
               </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Connection Test */}
+              <div className={clsx(
+                "p-4 rounded-lg border",
+                isDarkMode ? "bg-gray-700 border-gray-600" : "bg-gray-50 border-gray-200"
+              )}>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className={clsx("font-medium", isDarkMode ? "text-white" : "text-gray-900")}>
+                    LangChain Connection Test
+                  </h4>
+                  <button
+                    onClick={testOpenAIAPI}
+                    disabled={openaiTest.isLoading}
+                    className={clsx(
+                      "px-3 py-1 rounded-lg text-sm font-medium transition-all",
+                      openaiTest.isLoading
+                        ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                        : "bg-blue-600 hover:bg-blue-700 text-white"
+                    )}
+                  >
+                    {openaiTest.isLoading ? (
+                      <div className="flex items-center space-x-2">
+                        <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <span>Testing...</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center space-x-2">
+                        <Zap className="w-3 h-3" />
+                        <span>Test Connection</span>
+                      </div>
+                    )}
+                  </button>
+                </div>
+                
+                {(openaiTest.result || openaiTest.error) && (
+                  <div className={clsx(
+                    "p-3 rounded text-sm font-mono whitespace-pre-wrap",
+                    openaiTest.error
+                      ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                      : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
+                  )}>
+                    {openaiTest.error || openaiTest.result}
+                  </div>
+                )}
+              </div>
+
+              {/* Chat Test */}
+              <div className={clsx(
+                "p-4 rounded-lg border",
+                isDarkMode ? "bg-gray-700 border-gray-600" : "bg-gray-50 border-gray-200"
+              )}>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className={clsx("font-medium", isDarkMode ? "text-white" : "text-gray-900")}>
+                    LangChain Chat Test
+                  </h4>
+                  <button
+                    onClick={testOpenAIChat}
+                    disabled={openaiTest.isLoading || !openaiTest.prompt.trim()}
+                    className={clsx(
+                      "px-3 py-1 rounded-lg text-sm font-medium transition-all",
+                      openaiTest.isLoading || !openaiTest.prompt.trim()
+                        ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                        : "bg-green-600 hover:bg-green-700 text-white"
+                    )}
+                  >
+                    {openaiTest.isLoading ? (
+                      <div className="flex items-center space-x-2">
+                        <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <span>Sending...</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center space-x-2">
+                        <Bot className="w-3 h-3" />
+                        <span>Test Chat</span>
+                      </div>
+                    )}
+                  </button>
+                </div>
+                
+                <div className="space-y-3">
+                  <div>
+                    <label className={clsx("block text-xs font-medium mb-1", isDarkMode ? "text-gray-300" : "text-gray-600")}>
+                      Test Prompt:
+                    </label>
+                    <textarea
+                      value={openaiTest.prompt}
+                      onChange={(e) => setOpenaiTest(prev => ({ ...prev, prompt: e.target.value }))}
+                      placeholder="Enter your test prompt..."
+                      rows={2}
+                      className={clsx(
+                        "w-full px-3 py-2 border rounded-lg text-sm resize-none",
+                        isDarkMode
+                          ? "bg-gray-600 border-gray-500 text-white placeholder-gray-400"
+                          : "border-gray-300 bg-white"
+                      )}
+                    />
+                  </div>
+                  
+                  {(openaiTest.result || openaiTest.error) && (
+                    <div>
+                      <label className={clsx("block text-xs font-medium mb-1", isDarkMode ? "text-gray-300" : "text-gray-600")}>
+                        Response:
+                      </label>
+                      <div className={clsx(
+                        "p-3 rounded text-sm max-h-32 overflow-y-auto",
+                        openaiTest.error
+                          ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                          : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+                      )}>
+                        {openaiTest.error || openaiTest.result}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        )}
+        {/* 
+        =============================================================================
+        END OF TEMPORARY TEST BLOCK - DELETE EVERYTHING ABOVE THIS COMMENT
+        =============================================================================
+        */}
+
+        {/* Main Interface with Debug Panel */}
+        <div className={clsx(
+          "h-[calc(100vh-400px)] mx-auto flex gap-4",
+          showDebugPanel ? "max-w-7xl" : "max-w-4xl"
+        )}>
+          {/* Chat Interface */}
+          <div className={clsx(
+            "h-full rounded-xl shadow-lg border flex flex-col",
+            isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200",
+            showDebugPanel ? "flex-1" : "w-full"
+          )}>
+            {/* Chat Header */}
+            <div className={clsx(
+              "p-4 border-b",
+              isDarkMode ? "border-gray-700" : "border-gray-200"
+            )}>
+              <div className="flex items-center justify-between">
+                <h3 className={clsx("font-semibold text-sm", isDarkMode ? "text-white" : "text-gray-900")}>
+                  Project Validation Workflow {validationState.isLoading && "• Processing..."}
+                </h3>
+                <div className="flex items-center space-x-2">
+                  {validationState.isLoading && (
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                  )}
+                  <button
+                    onClick={handleReset}
+                    className={clsx(
+                      "p-1 rounded transition-colors",
+                      isDarkMode
+                        ? "hover:bg-gray-700 text-gray-400"
+                        : "hover:bg-gray-100 text-gray-600"
+                    )}
+                    title="Reset conversation"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Chat Messages Area */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {chatMessages.length === 0 && !validationState.isLoading && (
+                <div className="text-center py-12">
+                  <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Brain className="w-8 h-8 text-white" />
+                  </div>
+                  <h3 className={clsx("text-lg font-semibold mb-2", isDarkMode ? "text-white" : "text-gray-900")}>AI Project Validator</h3>
+                  <p className={clsx("text-sm mb-6", isDarkMode ? "text-gray-400" : "text-gray-600")}>
+                    Share your project initiative and I&apos;ll help you structure it into a valid project format.
+                  </p>
+                  <div className={clsx(
+                    "text-sm p-4 rounded-lg inline-block border-2 border-dashed max-w-md",
+                    isDarkMode ? "border-gray-600 text-gray-300" : "border-gray-300 text-gray-600"
+                  )}>
+                    💡 Example: &quot;I want to create a mobile app that helps users find and book local fitness classes for our company FitConnect&quot;
+                  </div>
+                </div>
+              )}
               
-              {completedStep?.result && (
-                <div className="bg-white rounded-md p-2 border border-green-200">
-                  <span className="text-xs font-medium text-gray-700">Analysis Result:</span>
-                  <div className="text-xs text-gray-600 mt-1">
-                    <pre className="whitespace-pre-wrap font-mono text-xs bg-gray-50 p-2 rounded border">
-                      {JSON.stringify(completedStep.result, null, 2)}
-                    </pre>
+              {/* Render chat messages */}
+              {chatMessages.map((message) => (
+                <div key={message.id} className="space-y-2">
+                  {/* User Message */}
+                  {message.type === 'user' && (
+                    <div className="flex justify-end">
+                      <div className={clsx(
+                        "max-w-xs md:max-w-md px-4 py-2 rounded-lg text-sm",
+                        "bg-blue-600 text-white"
+                      )}>
+                        {message.content}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* AI Messages */}
+                  {(message.type === 'ai' || message.type === 'welcome' || message.type === 'validation' || message.type === 'analysis') && (
+                    <div className="flex justify-start">
+                      <div className="flex space-x-2 max-w-full">
+                        <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                          <Brain className="w-4 h-4 text-white" />
+                        </div>
+                        <div className="space-y-2 flex-1">
+                          <div className={clsx(
+                            "px-4 py-2 rounded-lg text-sm relative",
+                            isDarkMode ? "bg-gray-700 text-gray-100" : "bg-gray-100 text-gray-800"
+                          )}>
+                            {message.fallbackMode && (
+                              <div className={clsx(
+                                "absolute -top-2 -right-2 px-2 py-1 rounded-full text-xs font-medium",
+                                message.fallbackMode === 'quick' 
+                                  ? "bg-amber-500 text-white" 
+                                  : "bg-red-500 text-white"
+                              )}>
+                                {message.fallbackMode === 'quick' ? '⚡ Quick Mode' : '🔧 Fallback'}
+                              </div>
+                            )}
+                            {message.content}
+                            
+                            {/* Analysis Details */}
+                            {message.type === 'analysis' && message.analysisDetails && (
+                              <div className={clsx(
+                                "mt-3 p-3 rounded-md border-l-4 text-xs",
+                                isDarkMode 
+                                  ? "bg-blue-900/20 border-blue-400 text-blue-200" 
+                                  : "bg-blue-50 border-blue-400 text-blue-700"
+                              )}>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <span className="font-medium">Input:</span> {message.analysisDetails.inputLength} characters
+                                  </div>
+                                  <div>
+                                    <span className="font-medium">Model:</span> {message.analysisDetails.model}
+                                  </div>
+                                  <div>
+                                    <span className="font-medium">Context:</span> {message.analysisDetails.context}
+                                  </div>
+                                  <div>
+                                    <span className="font-medium">Expected Time:</span> {message.analysisDetails.expectedTime}
+                                  </div>
+                                </div>
+                                {message.status === 'in_progress' && (
+                                  <div className="flex items-center space-x-2 mt-2">
+                                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                                    <span className="text-xs">Processing...</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          {message.validation && (
+                            <ProjectValidationMessage 
+                              validation={message.validation} 
+                              isDarkMode={isDarkMode} 
+                            />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* System Messages */}
+                  {message.type === 'system' && (
+                    <div className="flex justify-center">
+                      <div className={clsx(
+                        "px-3 py-1 rounded-full text-xs",
+                        message.status === 'error' 
+                          ? "bg-red-100 text-red-700" 
+                          : isDarkMode 
+                            ? "bg-gray-700 text-gray-300" 
+                            : "bg-gray-200 text-gray-600"
+                      )}>
+                        {message.content}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+              
+              {/* Show thinking steps when AI is processing */}
+              {validationState.isLoading && (
+                <div className="flex justify-start">
+                  <div className="flex space-x-2 max-w-full">
+                    <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                      <Brain className="w-4 h-4 text-white" />
+                    </div>
+                    <div className="space-y-2 flex-1">
+                      <div className={clsx(
+                        "px-4 py-3 rounded-lg text-sm",
+                        isDarkMode ? "bg-gray-700 text-gray-100" : "bg-gray-100 text-gray-800"
+                      )}>
+                        {currentThinking ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-blue-600">Processing...</span>
+                              <span className="text-xs opacity-60">
+                                Step {currentThinking.step} of {currentThinking.total}
+                              </span>
+                            </div>
+                            <div className="text-sm opacity-90 whitespace-pre-line">
+                              {currentThinking.content}
+                            </div>
+                            <div className="w-full bg-gray-300 rounded-full h-1.5 mt-2">
+                              <div 
+                                className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
+                                style={{ width: `${(currentThinking.step / currentThinking.total) * 100}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center space-x-2">
+                            <div className="flex space-x-1">
+                              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+                              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                            </div>
+                            <span>Processing your initiative...</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
-  );
-}
+            
+            {/* Chat Input */}
+            <div className={clsx(
+              "p-4 border-t",
+              isDarkMode ? "border-gray-700" : "border-gray-200"
+            )}>
+              <div className="flex space-x-2">
+                <input
+                  type="text"
+                  value={currentMessage}
+                  onChange={(e) => setCurrentMessage(e.target.value)}
+                  placeholder="Describe your project initiative or ask questions..."
+                  className={clsx(
+                    "flex-1 px-4 py-3 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm",
+                    isDarkMode
+                      ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400"
+                      : "border-gray-300 bg-white"
+                  )}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      handleSendMessage();
+                    }
+                  }}
+                  disabled={validationState.isLoading}
+                />
+                <button
+                  onClick={handleSendMessage}
+                  disabled={!currentMessage.trim() || validationState.isLoading}
+                  className={clsx(
+                    "px-6 py-3 rounded-xl font-medium transition-all text-sm",
+                    !currentMessage.trim() || validationState.isLoading
+                      ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                      : "bg-blue-600 hover:bg-blue-700 text-white"
+                  )}
+                >
+                  {validationState.isLoading ? (
+                    <div className="flex items-center space-x-2">
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>Processing</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center space-x-2">
+                      <Send className="w-4 h-4" />
+                      <span>Send</span>
+                    </div>
+                  )}
+                </button>
+              </div>
+              
+              {/* Status indicator */}
+              {validationState.conversationState && (
+                <div className="mt-3 flex items-center justify-between text-xs">
+                  <div className="flex items-center space-x-4">
+                    <span className={clsx(isDarkMode ? "text-gray-400" : "text-gray-600")}>
+                      Validation attempts: {validationState.conversationState.validationAttempts}
+                    </span>
+                    {validationState.hasValidProject && (
+                      <span className="text-green-600 flex items-center space-x-1">
+                        <CheckCircle className="w-3 h-3" />
+                        <span>Project validated</span>
+                      </span>
+                    )}
+                  </div>
+                  <div className={clsx("text-xs", isDarkMode ? "text-gray-400" : "text-gray-600")}>
+                    Powered by LangChain + OpenAI
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Debug Panel */}
+          {showDebugPanel && (
+            <div className={clsx(
+              "w-96 rounded-xl shadow-lg border flex flex-col",
+              isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+            )}>
+              {/* Debug Header */}
+              <div className={clsx(
+                "p-4 border-b",
+                isDarkMode ? "border-gray-700" : "border-gray-200"
+              )}>
+                <div className="flex items-center justify-between">
+                  <h3 className={clsx("font-semibold text-sm", isDarkMode ? "text-white" : "text-gray-900")}>
+                    🔧 Debug Log
+                  </h3>
+                  <button
+                    onClick={() => setDebugLogs([])}
+                    className={clsx(
+                      "p-1 rounded transition-colors text-xs",
+                      isDarkMode
+                        ? "hover:bg-gray-700 text-gray-400"
+                        : "hover:bg-gray-100 text-gray-600"
+                    )}
+                    title="Clear logs"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <p className={clsx("text-xs mt-1", isDarkMode ? "text-gray-400" : "text-gray-600")}>
+                  AI reasoning steps and API calls
+                </p>
+              </div>
 
-interface AnalysisProgressDropdownProps {
-  confirmationSteps: ConfirmationStep[];
-  completedSteps: ConfirmationStep[];
-  getStepStatus: (stepId: string) => 'completed' | 'current' | 'pending';
-}
+              {/* Fallback Indicators */}
+              {debugLogs.some(log => ['ai_parse_failure', 'ai_missing_score', 'api_error_fallback'].includes(log.type)) && (
+                <div className="px-4 py-2 border-b border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20">
+                  <div className="flex items-center space-x-2 mb-1">
+                    <span className="text-red-600 dark:text-red-400 text-sm font-semibold">⚠️ AI Fallback Active</span>
+                  </div>
+                  <div className="text-xs text-red-700 dark:text-red-300 space-y-1">
+                    {debugLogs.find(log => log.type === 'ai_parse_failure') && (
+                      <div>• AI Response Parsing Failed → Using default 50% qualification score</div>
+                    )}
+                    {debugLogs.find(log => log.type === 'ai_missing_score') && (
+                      <div>• AI Missing Score Field → Defaulted to 50% qualification score</div>
+                    )}
+                    {debugLogs.find(log => log.type === 'api_error_fallback') && (
+                      <div>• OpenAI API Error → Using static validation with 30% score</div>
+                    )}
+                  </div>
+                </div>
+              )}
 
-function AnalysisProgressDropdown({ confirmationSteps, completedSteps, getStepStatus }: AnalysisProgressDropdownProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  
-  // Find current or most recent step
-  const currentStepIndex = confirmationSteps.findIndex(step => getStepStatus(step.id) === 'current');
-  const currentStep = currentStepIndex >= 0 
-    ? confirmationSteps[currentStepIndex]
-    : confirmationSteps.find(step => getStepStatus(step.id) === 'completed') || confirmationSteps[0];
-
-  const completedCount = confirmationSteps.filter(step => getStepStatus(step.id) === 'completed').length;
-  const totalSteps = confirmationSteps.length;
-
-  return (
-    <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-      {/* Header with current step */}
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between mb-4 text-left"
-      >
-        <div className="flex items-center space-x-2">
-          <Settings className="w-5 h-5" />
-          <span className="text-lg font-semibold text-gray-900">Analysis Progress</span>
-          <span className="text-sm text-gray-500">({completedCount}/{totalSteps})</span>
-        </div>
-        {isExpanded ? 
-          <ChevronDown className="w-5 h-5 text-gray-400" /> : 
-          <ChevronRight className="w-5 h-5 text-gray-400" />
-        }
-      </button>
-
-      {/* Current Step Always Visible */}
-      {currentStep && (
-        <div className="mb-3">
-          <ProgressStepItem
-            step={currentStep}
-            status={getStepStatus(currentStep.id)}
-            index={0}
-            completedStep={completedSteps.find(s => s.id === currentStep.id)}
-          />
-        </div>
-      )}
-
-      {/* Progress Bar */}
-      <div className="mb-4">
-        <div className="w-full bg-gray-200 rounded-full h-2">
-          <motion.div
-            className="bg-blue-600 h-2 rounded-full"
-            initial={{ width: 0 }}
-            animate={{ width: `${(completedCount / totalSteps) * 100}%` }}
-            transition={{ duration: 0.5 }}
-          />
-        </div>
-        <div className="flex justify-between text-xs text-gray-500 mt-1">
-          <span>Progress</span>
-          <span>{Math.round((completedCount / totalSteps) * 100)}%</span>
+              {/* Debug Logs */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-full">
+                {debugLogs.length === 0 ? (
+                  <div className="text-center py-8">
+                    <div className={clsx("text-sm", isDarkMode ? "text-gray-400" : "text-gray-600")}>
+                      No debug logs yet.
+                      <br />
+                      Send a message to see AI reasoning.
+                    </div>
+                  </div>
+                ) : (
+                  debugLogs.map((log) => (
+                    <div
+                      key={log.id}
+                      className={clsx(
+                        "rounded-lg p-3 border-l-4 text-xs",
+                        log.type === 'api_call' && "border-blue-400 bg-blue-50 dark:bg-blue-900/20",
+                        log.type === 'thinking' && "border-purple-400 bg-purple-50 dark:bg-purple-900/20",
+                        log.type === 'qualification' && "border-yellow-400 bg-yellow-50 dark:bg-yellow-900/20",
+                        log.type === 'validation' && "border-green-400 bg-green-50 dark:bg-green-900/20",
+                        log.type === 'company_search' && "border-orange-400 bg-orange-50 dark:bg-orange-900/20",
+                        log.type === 'response' && "border-gray-400 bg-gray-50 dark:bg-gray-900/20",
+                        log.type === 'ai_success' && "border-green-500 bg-green-100 dark:bg-green-800/30",
+                        log.type === 'fallback_mode' && "border-amber-500 bg-amber-100 dark:bg-amber-800/30",
+                        log.type === 'error_fallback' && "border-red-500 bg-red-100 dark:bg-red-800/30",
+                        log.type === 'ai_parse_failure' && "border-red-400 bg-red-50 dark:bg-red-900/20",
+                        log.type === 'ai_missing_score' && "border-orange-500 bg-orange-100 dark:bg-orange-800/30",
+                        log.type === 'api_error_fallback' && "border-red-600 bg-red-200 dark:bg-red-700/40"
+                      )}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-medium">{log.title}</span>
+                        <div className="flex items-center space-x-2">
+                          {log.duration && (
+                            <span className={clsx("text-xs opacity-60")}>
+                              {log.duration}ms
+                            </span>
+                          )}
+                          <span className={clsx("text-xs opacity-60")}>
+                            {log.timestamp.toLocaleTimeString()}
+                          </span>
+                        </div>
+                      </div>
+                      <div className={clsx("text-xs", isDarkMode ? "text-gray-300" : "text-gray-700")}>
+                        {typeof log.details === 'object' ? (
+                          <div className="space-y-1">
+                            {Object.entries(log.details).map(([key, value]) => (
+                              <div key={key} className="flex">
+                                <span className={clsx(
+                                  "font-medium capitalize min-w-0 flex-shrink-0 mr-2",
+                                  log.type === 'fallback_mode' && "text-amber-700 dark:text-amber-300",
+                                  log.type === 'error_fallback' && "text-red-700 dark:text-red-300",
+                                  log.type === 'ai_parse_failure' && "text-red-700 dark:text-red-300",
+                                  log.type === 'ai_missing_score' && "text-orange-700 dark:text-orange-300",
+                                  log.type === 'api_error_fallback' && "text-red-800 dark:text-red-200"
+                                )}>
+                                  {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}:
+                                </span>
+                                <span className={clsx(
+                                  "break-words flex-1",
+                                  log.type === 'fallback_mode' && key === 'mode' && "font-semibold text-amber-800 dark:text-amber-200",
+                                  log.type === 'error_fallback' && key === 'mode' && "font-semibold text-red-800 dark:text-red-200",
+                                  log.type === 'ai_parse_failure' && (key === 'reason' || key === 'fallbackAction') && "font-semibold text-red-800 dark:text-red-200",
+                                  log.type === 'ai_missing_score' && (key === 'fallbackValue' || key === 'impact') && "font-semibold text-orange-800 dark:text-orange-200",
+                                  log.type === 'api_error_fallback' && (key === 'reason' || key === 'fallbackAction') && "font-semibold text-red-900 dark:text-red-100"
+                                )}>
+                                  {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="whitespace-pre-wrap break-words">{log.details}</div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Expandable All Steps */}
-      <AnimatePresence>
-        {isExpanded && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="space-y-3 border-t pt-4"
-          >
-            <h4 className="font-medium text-gray-700 text-sm">All Steps:</h4>
-            {confirmationSteps.map((step, index) => {
-              if (step.id === currentStep?.id) return null; // Skip current step since it's shown above
-              
-              const status = getStepStatus(step.id);
-              const completedStep = completedSteps.find(s => s.id === step.id);
-              return (
-                <ProgressStepItem
-                  key={step.id}
-                  step={step}
-                  status={status}
-                  index={index}
-                  completedStep={completedStep}
-                />
-              );
-            })}
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
