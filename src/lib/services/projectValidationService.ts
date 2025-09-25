@@ -44,17 +44,19 @@ export interface ValidationResult {
   nextSteps: string[];
   potentialResult?: ProjectPotentialResult;
   qualificationResult?: ProjectQualificationResult;
-  projectCriteria?: {
-    scope?: string;
-    budget?: string;
-    timeline?: string;
+  productVisionCriteria?: {
+    vision?: string;
+    targetGroup?: string;
+    needs?: string;
+    product?: string;
+    businessGoals?: string;
   };
 }
 
 export interface CompanyInfo {
   name: string;
-  employees?: string;
-  revenue?: string;
+  employees?: string; // Number of employees
+  nsv?: string; // Net Sales Value from last year
   country?: string;
   description?: string;
 }
@@ -69,7 +71,7 @@ export interface ConversationState {
 }
 
 export interface DebugCallback {
-  (type: 'ai_parse_failure' | 'ai_missing_score' | 'api_error_fallback', title: string, details: any): void;
+  (type: 'ai_parse_failure' | 'ai_missing_score' | 'api_error_fallback' | 'ai_field_calculation', title: string, details: any): void;
 }
 
 export class ProjectValidationAgent {
@@ -85,25 +87,33 @@ export class ProjectValidationAgent {
     this.llm = new ChatOpenAI({
       modelName: "o3-mini",
       openAIApiKey: process.env.OPENAI_API_KEY,
+      timeout: 150000, // 150 seconds timeout to match our fallback logic
+      configuration: {
+        timeout: 150000, // Also set at configuration level
+      },
       modelKwargs: {
-        reasoning_effort: "low", // Use low for better token efficiency like our working test
+        reasoning_effort: "low", // Use low for better token efficiency
         max_completion_tokens: 6000 // Increased token limit for reasoning
       }
     });
 
     console.log(`🤖 Project Validation Agent using LangChain ChatOpenAI with o3-mini`);
+    console.log(`🔑 OpenAI API Key present: ${process.env.OPENAI_API_KEY ? 'Yes' : 'No'}`);
+    console.log(`🔑 API Key length: ${process.env.OPENAI_API_KEY ? process.env.OPENAI_API_KEY.length : 0} characters`);
     this.setupChains();
   }
 
   private setupChains() {
     // Project validation chain for completeness assessment
     const validationPrompt = ChatPromptTemplate.fromMessages([
-      ["system", `You are an expert project validation assistant. Your job is to assess if a project initiative has enough details to be considered complete.
+      ["system", `You are an expert product validation assistant. Your job is to assess if a product initiative has enough details across the five building blocks of product vision.
 
-A COMPLETE PROJECT must have:
-1. CLEARLY DEFINED SCOPE: Specific goals, deliverables, and success criteria
-2. CALCULABLE BUDGET: Either provided or reasonably estimable based on scope
-3. FIXED TIMELINE: Clear start/end dates or duration
+A COMPLETE PRODUCT VISION must have clear elements for:
+1. VISION: Purpose for creating the product, positive change it should bring
+2. TARGET GROUP: Market segment, target customers/users identified
+3. NEEDS: Problem the product solves, benefits it provides
+4. PRODUCT: What the product is, what makes it stand out, feasibility considerations
+5. BUSINESS GOALS: How it benefits the company, business objectives
 
 COMPANY INFORMATION REQUIREMENT:
 - You must also check if the user has provided their company name
@@ -111,22 +121,25 @@ COMPANY INFORMATION REQUIREMENT:
 
 RESPONSE FORMAT - Always respond with valid JSON containing these exact fields:
 - isValidProject: true or false
-- projectQualificationPotential: IGNORE THIS FIELD (handled by Stage 1)
-- projectDefinitionReadiness: number 0-100 (percentage of how complete the project definition is)
+- projectDefinitionReadiness: number 0-100 (percentage of how complete the product vision is)
 - hasCompanyInfo: true or false
 - feedback: detailed explanation of your assessment
 - completionChecklist: array of checklist categories with items
 - nextSteps: array of actionable next steps
-- projectCriteria: object with scope, budget, timeline assessments
+- productVisionCriteria: object with vision, targetGroup, needs, product, businessGoals assessments
 
-For completionChecklist, create categories like "Project Scope", "Timeline & Planning", "Budget & Resources" with items having task, completed (true/false), and priority (high/medium/low).
+DO NOT include projectQualificationPotential field in your response - this is handled separately.
+
+For completionChecklist, create categories like "Product Vision", "Target Market", "Problem & Solution", "Business Value" with items having task, completed (true/false), and priority (high/medium/low).
 
 GUIDANCE RULES:
 - Instead of saying "Please rephrase...", ask specific questions about what's missing
-- For missing scope: Ask "What specific features do you want to build?" or "What problem will this solve?"
-- For missing budget: Ask "What's your estimated budget range?" or "How many team members will work on this?"
-- For missing timeline: Ask "When do you need this completed?" or "How long do you think this will take?"
-- For missing company info: Ask "What company is this project for?"
+- For missing vision: Ask "What positive change do you want this product to bring?" or "What's your purpose for creating this?"
+- For missing target group: Ask "Who are your target customers?" or "What market segment will you serve?"
+- For missing needs: Ask "What specific problem does this solve?" or "What benefits will users get?"
+- For missing product: Ask "What exactly is the product?" or "What makes your solution unique?"
+- For missing business goals: Ask "How will this benefit your company?" or "What are your business objectives?"
+- For missing company info: Ask "What company is this product for?"
 - Be specific and actionable in your suggestions.`],
       ["human", "Initiative: {initiative}\n\nCompany Name (if provided): {companyName}\n\nPlease validate this initiative."]
     ]);
@@ -167,34 +180,41 @@ Keep responses conversational, helpful, and focused on moving toward a valid pro
 
   // STAGE 1: Project Potential Assessment
   async hasProjectPotential(input: string): Promise<ProjectPotentialResult> {
+    const startTime = Date.now();
+    console.log(`🔍 Starting hasProjectPotential at ${new Date().toISOString()} for input: "${input.substring(0, 100)}..."`);
     try {
       const potentialPrompt = ChatPromptTemplate.fromMessages([
-        ["system", `You are an expert at identifying if a user's input has PROJECT POTENTIAL.
+        ["system", `You are an expert at identifying if a user's input contains the FIVE BUILDING BLOCKS OF PRODUCT VISION.
 
-PROJECT POTENTIAL means the subject could reasonably be developed into a temporary business endeavor with unique deliverables through follow-up questions.
+A user prompt has PROJECT POTENTIAL if it contains or implies elements from the Product Vision Board's five building blocks:
 
-✅ HAS PROJECT POTENTIAL (even if incomplete):
-- Business improvement ideas
-- Product/service creation
-- Process optimization
-- System implementation
-- Event planning with business context
-- Any business initiative that could have scope, timeline, budget
+1. VISION - Purpose for creating the product, positive change it should bring
+2. TARGET GROUP - Market segment, target customers/users  
+3. NEEDS - Problem the product solves, benefits it provides
+4. PRODUCT - What the product is, what makes it stand out, feasibility
+5. BUSINESS GOALS - How it benefits the company, business objectives
 
-❌ NO PROJECT POTENTIAL (will never be a project):
+✅ HAS PROJECT POTENTIAL (contains 2+ building blocks, even if incomplete):
+- Ideas mentioning target users and problems to solve
+- Product concepts with business benefits
+- Solutions addressing specific market needs
+- Initiatives with clear vision and feasibility considerations
+- Any combination of vision elements that could be expanded
+
+❌ NO PROJECT POTENTIAL (lacks product vision elements):
 - General information queries
-- Shopping/purchasing
+- Shopping/purchasing requests  
 - Personal activities without business context
-- Theoretical questions
-- Ongoing operational tasks
+- Theoretical questions without product focus
+- Operational tasks without product development
 
 RESPONSE FORMAT - Respond with ONLY a JSON object with these exact fields:
 - hasPotential: true or false
 - confidence: number between 0.0 and 1.0
-- reasoning: string explaining your assessment
-- missingElements: array of strings for missing project elements
+- reasoning: string explaining your assessment based on which building blocks are present/missing
+- missingElements: array of strings for missing building blocks (use: "vision", "target_group", "needs", "product", "business_goals")
 
-Focus on POTENTIAL, not completeness. If it could become a project with more details, mark as true.`],
+Focus on PRODUCT VISION POTENTIAL, not project completeness. If it contains building blocks that could be expanded, mark as true.`],
         ["human", "Assess project potential: {input}"]
       ]);
 
@@ -205,17 +225,20 @@ Focus on POTENTIAL, not completeness. If it could become a project with more det
       ]);
 
       const response = await potentialChain.invoke({ input });
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+      console.log(`✅ hasProjectPotential completed in ${duration}ms (${(duration/1000).toFixed(2)}s) at ${new Date().toISOString()}`);
       
       try {
       const result = JSON.parse(response);
       
       // Log for debugging
-      console.log(`[DEBUG] Project potential for "${input}":`, result);
+      console.log(`[DEBUG] Product vision building blocks assessment for "${input}":`, result);
       
       return {
           hasPotential: result.hasPotential || false,
           confidence: result.confidence || 0.5,
-          reasoning: result.reasoning || "Unable to assess project potential",
+          reasoning: result.reasoning || "Unable to assess product vision building blocks",
         missingElements: result.missingElements || []
       };
       } catch (parseError) {
@@ -226,58 +249,71 @@ Focus on POTENTIAL, not completeness. If it could become a project with more det
           hasPotential: hasProjectKeywords,
           confidence: hasProjectKeywords ? 0.6 : 0.3,
           reasoning: hasProjectKeywords 
-            ? "Contains project-related keywords but needs analysis"
-            : "Does not appear to contain project-related content",
+            ? "Contains product-related keywords but needs analysis of vision building blocks"
+            : "Does not appear to contain product vision elements",
           missingElements: hasProjectKeywords 
-            ? ["scope", "timeline", "budget", "business context"]
+            ? ["vision", "target_group", "needs", "product", "business_goals"]
             : []
         };
       }
       
     } catch (error) {
-      console.error('Project potential assessment error:', error);
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+      console.error(`❌ Project potential assessment error after ${duration}ms (${(duration/1000).toFixed(2)}s):`, error);
+      console.error('Full error details:', {
+        name: error instanceof Error ? error.name : 'Unknown',
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : 'No stack trace',
+        cause: error instanceof Error && 'cause' in error ? error.cause : 'No cause'
+      });
       
       // Fallback logic
-      const basicProjectKeywords = ['project', 'build', 'create', 'develop', 'implement', 'launch', 'improve', 'system', 'app', 'process'];
-      const nonProjectKeywords = ['weather', 'cheapest', 'what is', 'how to', 'recipe', 'movie'];
+      const basicProductKeywords = ['product', 'build', 'create', 'develop', 'solution', 'users', 'customers', 'problem', 'business', 'service'];
+      const nonProductKeywords = ['weather', 'cheapest', 'what is', 'how to', 'recipe', 'movie'];
       
       const lowercaseInput = input.toLowerCase();
-      const hasProjectKeywords = basicProjectKeywords.some(keyword => lowercaseInput.includes(keyword));
-      const hasNonProjectKeywords = nonProjectKeywords.some(keyword => lowercaseInput.includes(keyword));
+      const hasProductKeywords = basicProductKeywords.some(keyword => lowercaseInput.includes(keyword));
+      const hasNonProductKeywords = nonProductKeywords.some(keyword => lowercaseInput.includes(keyword));
       
-      if (hasNonProjectKeywords) {
+      if (hasNonProductKeywords) {
         return {
           hasPotential: false,
           confidence: 0.8,
-          reasoning: "Appears to be a general query or non-business request",
+          reasoning: "Appears to be a general query or non-product request",
           missingElements: []
         };
       }
       
       return {
-        hasPotential: hasProjectKeywords,
-        confidence: hasProjectKeywords ? 0.6 : 0.3,
-        reasoning: hasProjectKeywords 
-          ? "Contains project-related keywords but needs analysis"
-          : "No clear project indicators detected",
-        missingElements: hasProjectKeywords 
-          ? ["scope", "timeline", "budget", "business context"]
+        hasPotential: hasProductKeywords,
+        confidence: hasProductKeywords ? 0.6 : 0.3,
+        reasoning: hasProductKeywords 
+          ? "Contains product-related keywords but needs analysis of vision building blocks"
+          : "No clear product vision indicators detected",
+        missingElements: hasProductKeywords 
+          ? ["vision", "target_group", "needs", "product", "business_goals"]
           : []
       };
     }
   }
 
   private hasProjectKeywords(input: string): boolean {
-    const projectKeywords = [
-      'project', 'build', 'create', 'develop', 'implement', 'launch', 'design',
-      'system', 'app', 'application', 'website', 'platform', 'tool', 'service',
-      'improve', 'optimize', 'automate', 'streamline', 'upgrade', 'migrate',
-      'business', 'company', 'organization', 'team', 'client', 'customer',
-      'budget', 'cost', 'timeline', 'deadline', 'schedule', 'deliverable'
+    const productVisionKeywords = [
+      // Vision keywords
+      'vision', 'purpose', 'mission', 'goal', 'change', 'impact', 'transform',
+      // Target group keywords  
+      'users', 'customers', 'market', 'segment', 'audience', 'target', 'clients',
+      // Needs keywords
+      'problem', 'solve', 'need', 'benefit', 'pain', 'challenge', 'issue', 'help',
+      // Product keywords
+      'product', 'service', 'platform', 'app', 'application', 'tool', 'solution', 'build', 'create', 'develop',
+      // Business goals keywords
+      'business', 'revenue', 'profit', 'growth', 'company', 'organization', 'value', 'roi'
     ];
     
     const lowercaseInput = input.toLowerCase();
-    return projectKeywords.some(keyword => lowercaseInput.includes(keyword));
+    return productVisionKeywords.some(keyword => lowercaseInput.includes(keyword));
   }
 
   // STAGE 2: Project Completeness Validation
@@ -286,36 +322,54 @@ Focus on POTENTIAL, not completeness. If it could become a project with more det
     companyName?: string,
     debugCallback?: DebugCallback
   ): Promise<ValidationResult> {
+    const startTime = Date.now();
+    console.log(`🔍 Starting validateProjectCompleteness at ${new Date().toISOString()} for initiative: "${initiative.substring(0, 100)}..."`);
     try {
-      const response = await this.validationChain.invoke({
+      // Create explicit timeout for the chain invocation to handle LangChain internal timeouts
+      const chainPromise = this.validationChain.invoke({
         initiative,
         companyName: companyName || "Not provided"
       });
+      
+      const chainTimeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => {
+          console.log(`⏰ Chain invocation timeout after 145 seconds at ${new Date().toISOString()}`);
+          reject(new Error('LangChain validation chain timeout after 145 seconds'));
+        }, 145000); // 5 seconds less than main timeout to allow proper error handling
+      });
+      
+      const response = await Promise.race([chainPromise, chainTimeoutPromise]);
+
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+      console.log(`✅ validateProjectCompleteness AI call completed in ${duration}ms (${(duration/1000).toFixed(2)}s) at ${new Date().toISOString()}`);
 
       // Parse the JSON response with error handling
       try {
       const result = JSON.parse(response);
       
-      // Check if AI returned a score or used the default
-      if (!result.projectQualificationPotential) {
-        debugCallback?.('ai_missing_score', '🔍 AI Missing Score Fallback', {
-          reason: 'OpenAI o3-mini response did not include projectQualificationPotential field',
-          fallbackValue: 50,
-          responseReceived: 'Valid JSON but missing score field',
-          impact: 'Using default 50% qualification score',
-          aiResponse: result
-        });
-      }
+      // Calculate projectQualificationPotential based on projectDefinitionReadiness
+      // Since we explicitly told the AI not to include this field, we calculate it ourselves
+      const readinessScore = result.projectDefinitionReadiness || 30;
+      const calculatedQualification = Math.min(100, Math.max(0, readinessScore + 20)); // Add 20 points to readiness for qualification
+      
+      debugCallback?.('ai_field_calculation', '📊 Qualification Score Calculated', {
+        method: 'Derived from projectDefinitionReadiness',
+        readinessScore: readinessScore,
+        calculatedQualification: calculatedQualification,
+        reasoning: 'projectQualificationPotential = projectDefinitionReadiness + 20 (capped at 100)',
+        impact: 'Consistent scoring based on project completeness'
+      });
       
       return {
           isValidProject: result.isValidProject || false,
-          projectQualificationPotential: result.projectQualificationPotential || 50,
-          projectDefinitionReadiness: result.projectDefinitionReadiness || 30,
+          projectQualificationPotential: calculatedQualification,
+          projectDefinitionReadiness: readinessScore,
           hasCompanyInfo: result.hasCompanyInfo || false,
           feedback: result.feedback || "Project assessment completed",
           completionChecklist: result.completionChecklist || this.getDefaultChecklist(!!companyName),
           nextSteps: result.nextSteps || ["Define project scope", "Set timeline", "Estimate budget"],
-          projectCriteria: result.projectCriteria || { scope: "Needs definition", budget: "Not specified", timeline: "Not specified" }
+          productVisionCriteria: result.productVisionCriteria || { vision: "Needs definition", targetGroup: "Not identified", needs: "Not specified", product: "Not defined", businessGoals: "Not specified" }
         };
       } catch (parseError) {
         console.error('Failed to parse validation response:', response);
@@ -333,7 +387,15 @@ Focus on POTENTIAL, not completeness. If it could become a project with more det
         return this.getFallbackValidationResult(!!companyName);
       }
     } catch (error) {
-      console.error('Project validation error:', error);
+      const endTime = Date.now();
+      const duration = endTime - startTime;
+      console.error(`❌ Project validation error after ${duration}ms (${(duration/1000).toFixed(2)}s):`, error);
+      console.error('Full validation error details:', {
+        name: error instanceof Error ? error.name : 'Unknown',
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : 'No stack trace',
+        cause: error instanceof Error && 'cause' in error ? error.cause : 'No cause'
+      });
       
       // Emit debug info about API error
       debugCallback?.('api_error_fallback', '🚨 OpenAI API Error Fallback', {
@@ -395,34 +457,43 @@ Focus on POTENTIAL, not completeness. If it could become a project with more det
   private getDefaultChecklist(hasCompanyInfo: boolean): ChecklistCategory[] {
     return [
       {
-        category: "Project Scope",
+        category: "Product Vision",
         items: [
-          { task: "Define specific problem to solve", completed: false, priority: "high" },
-          { task: "List key features and deliverables", completed: false, priority: "high" },
-          { task: "Identify target users/beneficiaries", completed: false, priority: "medium" }
+          { task: "Define the purpose for creating this product", completed: false, priority: "high" },
+          { task: "Articulate the positive change it should bring", completed: false, priority: "high" },
+          { task: "Clarify the overall vision and mission", completed: false, priority: "medium" }
         ]
       },
       {
-        category: "Timeline & Planning",
+        category: "Target Market",
         items: [
-          { task: "Set project start date", completed: false, priority: "high" },
-          { task: "Define project milestones", completed: false, priority: "high" },
-          { task: "Estimate completion timeline", completed: false, priority: "high" }
+          { task: "Identify target market segment", completed: false, priority: "high" },
+          { task: "Define target customers and users", completed: false, priority: "high" },
+          { task: "Understand market demographics and characteristics", completed: false, priority: "medium" }
         ]
       },
       {
-        category: "Budget & Resources",
+        category: "Problem & Solution",
         items: [
-          { task: "Estimate total budget", completed: false, priority: "high" },
-          { task: "Identify team size and skills needed", completed: false, priority: "high" },
-          { task: "Plan resource allocation", completed: false, priority: "medium" }
+          { task: "Define the specific problem the product solves", completed: false, priority: "high" },
+          { task: "Identify benefits users will gain", completed: false, priority: "high" },
+          { task: "Validate user needs and pain points", completed: false, priority: "medium" }
         ]
       },
       {
-        category: "Company Context",
+        category: "Product Definition",
         items: [
-          { task: "Specify company/organization name", completed: hasCompanyInfo, priority: "medium" },
-          { task: "Define business impact", completed: false, priority: "medium" }
+          { task: "Define what the product is and its core features", completed: false, priority: "high" },
+          { task: "Identify what makes it unique and stand out", completed: false, priority: "medium" },
+          { task: "Assess feasibility and development considerations", completed: false, priority: "medium" }
+        ]
+      },
+      {
+        category: "Business Value",
+        items: [
+          { task: "Define how the product benefits the company", completed: false, priority: "high" },
+          { task: "Set clear business objectives and goals", completed: false, priority: "high" },
+          { task: "Specify company/organization context", completed: hasCompanyInfo, priority: "medium" }
         ]
       }
     ];
@@ -441,23 +512,25 @@ Focus on POTENTIAL, not completeness. If it could become a project with more det
         "Outline the key deliverables and features", 
         "Set a realistic timeline with milestones"
       ],
-      projectCriteria: {
-        scope: "Needs definition",
-        budget: "Not specified", 
-        timeline: "Not specified"
+      productVisionCriteria: {
+        vision: "Needs definition",
+        targetGroup: "Not identified", 
+        needs: "Not specified",
+        product: "Not defined",
+        businessGoals: "Not specified"
       }
     };
   }
 
-  // Updated main validation method with two-stage approach
-  async validateInitiative(
+  // Optimized validation method that reuses potential result to avoid duplicate calls
+  async validateInitiativeWithPotential(
     initiative: string, 
-    companyName?: string,
+    companyName: string | undefined,
+    potentialResult: any,
     debugCallback?: DebugCallback
   ): Promise<ValidationResult> {
     try {
-      // STAGE 1: Check project potential
-      const potentialResult = await this.hasProjectPotential(initiative);
+      // STAGE 1: Use the already-computed potential result
       
       if (!potentialResult.hasPotential) {
         return {
@@ -468,11 +541,11 @@ Focus on POTENTIAL, not completeness. If it could become a project with more det
           feedback: `This doesn't appear to be a project initiative. ${potentialResult.reasoning}`,
           completionChecklist: [
             {
-              category: "Project Identification",
+            category: "Product Vision Foundation",
               items: [
-                { task: "Identify a business challenge to address", completed: false, priority: "high" },
-                { task: "Define a unique product, service, or process improvement", completed: false, priority: "high" },
-                { task: "Specify desired business outcome", completed: false, priority: "high" }
+              { task: "Identify a business challenge or opportunity to address", completed: false, priority: "high" },
+              { task: "Define a unique product or service concept", completed: false, priority: "high" },
+              { task: "Articulate the desired business outcome and vision", completed: false, priority: "high" }
               ]
             }
           ],
@@ -482,10 +555,12 @@ Focus on POTENTIAL, not completeness. If it could become a project with more det
             "Frame your request in terms of business deliverables"
           ],
           potentialResult,
-          projectCriteria: {
-            scope: "Not identified as project",
-            budget: "Not applicable",
-            timeline: "Not applicable"
+          productVisionCriteria: {
+            vision: "Not identified as product",
+            targetGroup: "Not applicable",
+            needs: "Not applicable",
+            product: "Not applicable",
+            businessGoals: "Not applicable"
           }
         };
       }
@@ -559,6 +634,17 @@ Focus on POTENTIAL, not completeness. If it could become a project with more det
     }
   }
 
+  // Original validation method for backward compatibility
+  async validateInitiative(
+    initiative: string, 
+    companyName?: string,
+    debugCallback?: DebugCallback
+  ): Promise<ValidationResult> {
+    // Get potential result and delegate to optimized method
+    const potentialResult = await this.hasProjectPotential(initiative);
+    return this.validateInitiativeWithPotential(initiative, companyName, potentialResult, debugCallback);
+  }
+
   async continueConversation(
     input: string,
     conversationHistory: BaseMessage[]
@@ -576,16 +662,88 @@ Focus on POTENTIAL, not completeness. If it could become a project with more det
     }
   }
 
-  async enrichCompanyInfo(companyName: string): Promise<CompanyInfo> {
-    // For now, return basic company info without web search
-    // TODO: Implement proper web search with absolute URLs in server context
+  async enrichCompanyInfo(companyName: string, searchResultsProvider?: (query: string) => Promise<any[]>): Promise<CompanyInfo> {
+    try {
+      console.log(`🔍 Enriching company info for: ${companyName}`);
+      
+      if (!searchResultsProvider) {
+        // Fallback to basic info if no search provider
     return {
       name: companyName,
-      description: `Project context for ${companyName}`,
-      employees: 'Not specified',
-      revenue: 'Not specified',
+          description: 'Web search not available in this context',
+          employees: 'Not available',
+          nsv: 'Not available',
       country: 'Not specified'
     };
+      }
+      
+      // Search queries focusing on employees and NSV
+      const searchQueries = [
+        `${companyName} number of employees 2024 2023`,
+        `${companyName} net sales revenue annual report 2023 2024`,
+        `${companyName} company size workforce headcount`
+      ];
+      
+      const companyInfo: CompanyInfo = { name: companyName };
+      
+      // Perform multiple searches to gather comprehensive information
+      for (const query of searchQueries) {
+        try {
+          console.log(`🔍 Searching for: ${query}`);
+          const searchResults = await searchResultsProvider(query);
+          if (searchResults && searchResults.length > 0) {
+            const extractedInfo = this.extractCompanyInfoFromSearch(companyName, searchResults);
+            
+            // Merge results, keeping the first non-empty values found
+            if (!companyInfo.employees && extractedInfo.employees) {
+              companyInfo.employees = extractedInfo.employees;
+            }
+            if (!companyInfo.nsv && extractedInfo.nsv) {
+              companyInfo.nsv = extractedInfo.nsv;
+            }
+            if (!companyInfo.country && extractedInfo.country) {
+              companyInfo.country = extractedInfo.country;
+            }
+            if (!companyInfo.description && extractedInfo.description) {
+              companyInfo.description = extractedInfo.description;
+            }
+          }
+        } catch (searchError) {
+          console.warn(`Search failed for query: ${query}`, searchError);
+          continue;
+        }
+      }
+      
+      console.log(`✅ Company info enriched for ${companyName}:`, companyInfo);
+      return companyInfo;
+      
+    } catch (error) {
+      console.error('Company enrichment error:', error);
+      
+      // Fallback to basic info
+      return {
+        name: companyName,
+        description: 'Company information not available via web search',
+        employees: 'Not found',
+        nsv: 'Not found',
+        country: 'Not specified'
+      };
+    }
+  }
+
+  private async performWebSearch(query: string): Promise<any[]> {
+    try {
+      // Note: This method will be called from the API route context
+      // The actual web search will be performed by the API route using web_search tool
+      console.log(`🔍 Performing web search for: ${query}`);
+      
+      // This is a placeholder - the actual implementation will be handled
+      // by the API route that calls this service
+      return [];
+    } catch (error) {
+      console.error('Web search error:', error);
+      return [];
+    }
   }
 
   private extractCompanyInfoFromSearch(companyName: string, searchResults: any[]): CompanyInfo {
@@ -598,34 +756,52 @@ Focus on POTENTIAL, not completeness. If it could become a project with more det
     // Combine all search result text for analysis
     const allText = searchResults.map(result => 
       `${result.title || ''} ${result.snippet || ''} ${result.content || ''}`
-    ).join(' ').toLowerCase();
+    ).join(' ');
 
-    // Extract employee count
+    // Extract employee count with more comprehensive patterns
     const employeePatterns = [
-      /(\d{1,3}(?:,\d{3})*)\s*(?:employees?|staff|workers?|people)/gi,
-      /employ(?:s|ing)\s*(?:over\s*)?(\d{1,3}(?:,\d{3})*)/gi,
-      /workforce\s*of\s*(\d{1,3}(?:,\d{3})*)/gi
+      // Standard patterns
+      /(\d{1,3}(?:,\d{3})*)\s*(?:employees?|staff|workers?|people|associates)/gi,
+      /employ(?:s|ing)\s*(?:over\s*|approximately\s*|around\s*)?(\d{1,3}(?:,\d{3})*)/gi,
+      /workforce\s*of\s*(?:over\s*|approximately\s*)?(\d{1,3}(?:,\d{3})*)/gi,
+      /headcount\s*(?:of\s*|is\s*)?(\d{1,3}(?:,\d{3})*)/gi,
+      // With K notation
+      /(\d{1,3}(?:\.\d+)?)\s*k\s*(?:employees?|staff|workers?|people)/gi,
+      // Range patterns
+      /(?:between\s*)?(\d{1,3}(?:,\d{3})*)\s*(?:to\s*|-)?\s*(?:\d{1,3}(?:,\d{3})*\s*)?(?:employees?|staff|workers?)/gi
     ];
 
     for (const pattern of employeePatterns) {
-      const match = allText.match(pattern);
-      if (match) {
-        companyInfo.employees = match[0];
+      const matches = allText.match(pattern);
+      if (matches && matches.length > 0) {
+        // Take the first match and clean it up
+        const match = matches[0];
+        companyInfo.employees = match.replace(/\s+/g, ' ').trim();
         break;
       }
     }
 
-    // Extract revenue
-    const revenuePatterns = [
-      /revenue\s*of\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d+)?\s*(?:billion|million|b|m))/gi,
-      /\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?\s*(?:billion|million|b|m))\s*(?:in\s*)?revenue/gi,
-      /annual\s*sales?\s*of\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d+)?\s*(?:billion|million|b|m))/gi
+    // Extract NSV (Net Sales Value) and revenue patterns
+    const nsvPatterns = [
+      // Net sales specific
+      /net\s*sales?\s*(?:value\s*)?(?:of\s*|was\s*|:)\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d+)?\s*(?:billion|million|b|m|bn))/gi,
+      /nsv\s*(?:of\s*|was\s*|:)\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d+)?\s*(?:billion|million|b|m|bn))/gi,
+      // Revenue patterns (as fallback for NSV)
+      /revenue\s*(?:of\s*|was\s*|reached\s*|:)\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d+)?\s*(?:billion|million|b|m|bn))/gi,
+      /\$(\d{1,3}(?:,\d{3})*(?:\.\d+)?\s*(?:billion|million|b|m|bn))\s*(?:in\s*)?(?:net\s*)?(?:sales?|revenue)/gi,
+      /annual\s*(?:net\s*)?(?:sales?|revenue)\s*(?:of\s*|was\s*|:)\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d+)?\s*(?:billion|million|b|m|bn))/gi,
+      // Fiscal year patterns
+      /(?:fy|fiscal\s*year)\s*\d{4}\s*(?:net\s*)?(?:sales?|revenue)\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d+)?\s*(?:billion|million|b|m|bn))/gi,
+      // 2023/2024 specific patterns
+      /(?:2023|2024)\s*(?:net\s*)?(?:sales?|revenue)\s*(?:of\s*|was\s*|:)\s*\$?(\d{1,3}(?:,\d{3})*(?:\.\d+)?\s*(?:billion|million|b|m|bn))/gi
     ];
 
-    for (const pattern of revenuePatterns) {
-      const match = allText.match(pattern);
-      if (match) {
-        companyInfo.revenue = match[0];
+    for (const pattern of nsvPatterns) {
+      const matches = allText.match(pattern);
+      if (matches && matches.length > 0) {
+        // Take the first match and clean it up
+        const match = matches[0];
+        companyInfo.nsv = match.replace(/\s+/g, ' ').trim();
         break;
       }
     }
@@ -637,12 +813,22 @@ Focus on POTENTIAL, not completeness. If it could become a project with more det
     ];
 
     for (const pattern of countryPatterns) {
-      const match = allText.match(pattern);
-      if (match) {
-        companyInfo.country = match[1];
+      const matches = allText.match(pattern);
+      if (matches && matches.length > 0) {
+        companyInfo.country = matches[0].replace(/headquarter(?:ed|s)?|based|located|in|headquarters|hq/gi, '').trim();
         break;
       }
     }
+
+    // Set description based on what we found
+    const foundItems = [];
+    if (companyInfo.employees) foundItems.push('employee count');
+    if (companyInfo.nsv) foundItems.push('net sales value');
+    if (companyInfo.country) foundItems.push('location');
+    
+    companyInfo.description = foundItems.length > 0 
+      ? `Company information found: ${foundItems.join(', ')}`
+      : 'Limited company information available';
 
     return companyInfo;
   }
@@ -666,10 +852,12 @@ Focus on POTENTIAL, not completeness. If it could become a project with more det
         "Provide more details about your specific goals",
         "Let me know if you need help with any particular area"
       ],
-      projectCriteria: {
-        scope: hasProjectKeywords ? "Partially defined" : "Needs definition",
-        budget: "Not specified",
-        timeline: "Not specified"
+      productVisionCriteria: {
+        vision: hasProjectKeywords ? "Partially defined" : "Needs definition",
+        targetGroup: "Not identified",
+        needs: hasProjectKeywords ? "Partially defined" : "Not specified",
+        product: hasProjectKeywords ? "Partially defined" : "Not defined",
+        businessGoals: "Not specified"
       }
     };
   }
@@ -678,7 +866,8 @@ Focus on POTENTIAL, not completeness. If it could become a project with more det
     input: string,
     state: ConversationState,
     useQuickMode = false,
-    debugCallback?: DebugCallback
+    debugCallback?: DebugCallback,
+    searchProvider?: (query: string) => Promise<any[]>
   ): Promise<{
     response: string;
     validation?: ValidationResult;
@@ -694,7 +883,7 @@ Focus on POTENTIAL, not completeness. If it could become a project with more det
     // Enrich company information if we have a company name but no detailed info
     let companyInfo = state.companyInfo;
     if (currentCompanyName && !companyInfo) {
-      companyInfo = await this.enrichCompanyInfo(currentCompanyName);
+      companyInfo = await this.enrichCompanyInfo(currentCompanyName, searchProvider);
     }
 
     // Quick mode fallback - skip AI processing if requested
@@ -721,8 +910,8 @@ Focus on POTENTIAL, not completeness. If it could become a project with more det
     const isNewInitiative = potentialResult.hasPotential && potentialResult.confidence > 0.5;
     
     if (isNewInitiative || !state.hasValidProject) {
-      // Use the new two-stage validation
-      const validation = await this.validateInitiative(input, currentCompanyName, debugCallback);
+      // Use the new two-stage validation (reuse the potentialResult we already have)
+      const validation = await this.validateInitiativeWithPotential(input, currentCompanyName, potentialResult, debugCallback);
       
       let response: string;
       
@@ -735,7 +924,7 @@ Focus on POTENTIAL, not completeness. If it could become a project with more det
       } else {
         // Generate a summary of the checklist for the response
         const checklistSummary = validation.completionChecklist
-          .flatMap(category => category.items.filter(item => !item.completed))
+          .flatMap(category => (category.items || []).filter(item => !item.completed))
           .slice(0, 3) // Show top 3 incomplete items
           .map(item => `• ${item.task}`)
           .join('\n');

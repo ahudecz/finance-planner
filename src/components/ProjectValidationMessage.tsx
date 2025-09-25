@@ -1,13 +1,14 @@
-import { CheckCircle, AlertCircle, Clock, Building2, Target, DollarSign, Calendar, CheckSquare, Square, Star, Zap } from "lucide-react";
+import { CheckCircle, AlertCircle, Clock, Building2, Target, DollarSign, Calendar, CheckSquare, Square, Star, Zap, Users, Heart, Package } from "lucide-react";
 import { clsx } from "clsx";
-import { ValidationResult, ChecklistItem } from "@/lib/services/projectValidationService";
+import { ValidationResult, ChecklistItem, CompanyInfo } from "@/lib/services/projectValidationService";
 
 interface ProjectValidationMessageProps {
   validation: ValidationResult;
   isDarkMode: boolean;
+  companyInfo?: CompanyInfo;
 }
 
-export function ProjectValidationMessage({ validation, isDarkMode }: ProjectValidationMessageProps) {
+export function ProjectValidationMessage({ validation, isDarkMode, companyInfo }: ProjectValidationMessageProps) {
   const getValidationIcon = () => {
     if (validation.isValidProject && validation.hasCompanyInfo) {
       return <CheckCircle className="w-5 h-5 text-green-500" />;
@@ -60,33 +61,49 @@ export function ProjectValidationMessage({ validation, isDarkMode }: ProjectVali
       </div>
 
       {/* Project Criteria Assessment */}
-      {validation.projectCriteria && (
+      {validation.productVisionCriteria && (
         <div className="space-y-2">
           <h4 className={clsx("font-medium text-xs", isDarkMode ? "text-gray-300" : "text-gray-700")}>
-            Project Criteria Assessment:
+            Product Vision Assessment:
           </h4>
           <div className="grid grid-cols-1 gap-2">
-            {validation.projectCriteria.scope && (
+            {validation.productVisionCriteria.vision && (
               <div className="flex items-center space-x-2">
                 <Target className="w-3 h-3 text-blue-500" />
                 <span className={clsx("text-xs", isDarkMode ? "text-gray-400" : "text-gray-600")}>
-                  <strong>Scope:</strong> {validation.projectCriteria.scope}
+                  <strong>Vision:</strong> {validation.productVisionCriteria.vision}
                 </span>
               </div>
             )}
-            {validation.projectCriteria.budget && (
+            {validation.productVisionCriteria.targetGroup && (
               <div className="flex items-center space-x-2">
-                <DollarSign className="w-3 h-3 text-green-500" />
+                <Users className="w-3 h-3 text-green-500" />
                 <span className={clsx("text-xs", isDarkMode ? "text-gray-400" : "text-gray-600")}>
-                  <strong>Budget:</strong> {validation.projectCriteria.budget}
+                  <strong>Target Group:</strong> {validation.productVisionCriteria.targetGroup}
                 </span>
               </div>
             )}
-            {validation.projectCriteria.timeline && (
+            {validation.productVisionCriteria.needs && (
               <div className="flex items-center space-x-2">
-                <Calendar className="w-3 h-3 text-purple-500" />
+                <Heart className="w-3 h-3 text-red-500" />
                 <span className={clsx("text-xs", isDarkMode ? "text-gray-400" : "text-gray-600")}>
-                  <strong>Timeline:</strong> {validation.projectCriteria.timeline}
+                  <strong>Needs:</strong> {validation.productVisionCriteria.needs}
+                </span>
+              </div>
+            )}
+            {validation.productVisionCriteria.product && (
+              <div className="flex items-center space-x-2">
+                <Package className="w-3 h-3 text-purple-500" />
+                <span className={clsx("text-xs", isDarkMode ? "text-gray-400" : "text-gray-600")}>
+                  <strong>Product:</strong> {validation.productVisionCriteria.product}
+                </span>
+              </div>
+            )}
+            {validation.productVisionCriteria.businessGoals && (
+              <div className="flex items-center space-x-2">
+                <DollarSign className="w-3 h-3 text-yellow-500" />
+                <span className={clsx("text-xs", isDarkMode ? "text-gray-400" : "text-gray-600")}>
+                  <strong>Business Goals:</strong> {validation.productVisionCriteria.businessGoals}
                 </span>
               </div>
             )}
@@ -95,11 +112,52 @@ export function ProjectValidationMessage({ validation, isDarkMode }: ProjectVali
       )}
 
       {/* Company Info Status */}
-      <div className="flex items-center space-x-2">
-        <Building2 className={clsx("w-3 h-3", validation.hasCompanyInfo ? "text-green-500" : "text-gray-400")} />
-        <span className={clsx("text-xs", isDarkMode ? "text-gray-400" : "text-gray-600")}>
-          Company Information: {validation.hasCompanyInfo ? "✅ Provided" : "❌ Missing"}
-        </span>
+      <div className="space-y-2">
+        <div className="flex items-center space-x-2">
+          <Building2 className={clsx("w-3 h-3", validation.hasCompanyInfo ? "text-green-500" : "text-gray-400")} />
+          <span className={clsx("text-xs font-medium", isDarkMode ? "text-gray-300" : "text-gray-700")}>
+            Company Information:
+          </span>
+        </div>
+        {validation.hasCompanyInfo && companyInfo ? (
+          <div className="ml-5 space-y-1">
+            <div className="flex items-center space-x-2">
+              <span className={clsx("text-xs", isDarkMode ? "text-gray-400" : "text-gray-600")}>
+                <strong>Company:</strong> {companyInfo.name}
+              </span>
+            </div>
+            {companyInfo.employees && (
+              <div className="flex items-center space-x-2">
+                <Users className="w-3 h-3 text-blue-500" />
+                <span className={clsx("text-xs", isDarkMode ? "text-gray-400" : "text-gray-600")}>
+                  <strong>Employees:</strong> {companyInfo.employees}
+                </span>
+              </div>
+            )}
+            {companyInfo.nsv && (
+              <div className="flex items-center space-x-2">
+                <DollarSign className="w-3 h-3 text-green-500" />
+                <span className={clsx("text-xs", isDarkMode ? "text-gray-400" : "text-gray-600")}>
+                  <strong>Revenue:</strong> {companyInfo.nsv}
+                </span>
+              </div>
+            )}
+            {companyInfo.country && (
+              <div className="flex items-center space-x-2">
+                <span className="text-xs">🌍</span>
+                <span className={clsx("text-xs", isDarkMode ? "text-gray-400" : "text-gray-600")}>
+                  <strong>Location:</strong> {companyInfo.country}
+                </span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="ml-5">
+            <span className={clsx("text-xs", isDarkMode ? "text-gray-400" : "text-gray-600")}>
+              {validation.hasCompanyInfo ? "✅ Provided" : "❌ Missing"}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* AI Qualification Analysis */}

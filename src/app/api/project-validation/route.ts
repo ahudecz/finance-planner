@@ -1,6 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { projectValidationAgent, ConversationState } from '@/lib/services/projectValidationService';
 
+// Configure API route timeout for Vercel/Next.js
+export const maxDuration = 300; // 5 minutes (300 seconds) - maximum allowed on Vercel Pro
+export const dynamic = 'force-dynamic';
+
+// Development server timeout workaround
+const isDevelopment = process.env.NODE_ENV === 'development';
+const DEVELOPMENT_TIMEOUT = isDevelopment ? 30000 : 150000; // 30s for dev, 150s for prod
+
+// Debug logging for timeout values
+console.log('🔧 TIMEOUT DEBUG:', {
+  NODE_ENV: process.env.NODE_ENV,
+  isDevelopment,
+  DEVELOPMENT_TIMEOUT,
+  timeoutInSeconds: DEVELOPMENT_TIMEOUT / 1000
+});
+
+// Note: config export is for Pages Router only, not App Router
+// App Router uses maxDuration export instead
+
+// Web search function for company enrichment
+async function performWebSearch(query: string): Promise<any[]> {
+  try {
+    console.log(`🔍 Web search for: ${query}`);
+    
+    // Use web_search tool available in the API context
+    // Determine the current server's base URL dynamically
+    const baseUrl = process.env.NEXTAUTH_URL || `http://localhost:${process.env.PORT || '3000'}`;
+    const searchResponse = await fetch(`${baseUrl}/api/web-search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query })
+    });
+
+    if (searchResponse.ok) {
+      const searchData = await searchResponse.json();
+      return searchData.results || [];
+    }
+    
+    return [];
+  } catch (error) {
+    console.error('Web search error:', error);
+    return [];
+  }
+}
+
 // Streaming handler for thinking steps
 async function handleStreamingProcess(input: string, conversationState: ConversationState) {
   const encoder = new TextEncoder();
@@ -8,7 +53,7 @@ async function handleStreamingProcess(input: string, conversationState: Conversa
   const stream = new ReadableStream({
     async start(controller) {
       // Debug callback to emit debug logs via streaming
-      const debugCallback = (type: 'ai_parse_failure' | 'ai_missing_score' | 'api_error_fallback', title: string, details: any) => {
+      const debugCallback = (type: 'ai_parse_failure' | 'ai_missing_score' | 'api_error_fallback' | 'ai_field_calculation', title: string, details: any) => {
         try {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({
             type: 'debug',
@@ -57,7 +102,7 @@ async function handleStreamingProcess(input: string, conversationState: Conversa
             summary: `Analyzing ${input.length} characters of input using OpenAI's o3-mini model`,
             model: 'OpenAI o3-mini with medium reasoning effort',
             context: conversationState.messages.length > 1 ? 'Continuing previous conversation' : 'Starting new conversation',
-            expectedTime: '5-60 seconds for full AI analysis',
+            expectedTime: `5-${DEVELOPMENT_TIMEOUT/1000} seconds for full AI analysis`,
             startTime: new Date(aiAnalysisStartTime).toLocaleTimeString()
           }
         })}\n\n`));
@@ -74,13 +119,28 @@ async function handleStreamingProcess(input: string, conversationState: Conversa
 
         // Process the actual request with timeout
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Request timeout after 60 seconds')), 60000);
+          setTimeout(() => {
+            const actualTimeoutDuration = Date.now() - aiAnalysisStartTime;
+            console.log(`⏰ TIMEOUT PROMISE triggered after ${actualTimeoutDuration}ms (expected ${DEVELOPMENT_TIMEOUT}ms) at ${new Date().toISOString()}`);
+            reject(new Error(`Request timeout after ${DEVELOPMENT_TIMEOUT/1000} seconds`));
+          }, DEVELOPMENT_TIMEOUT);
         });
 
         let result;
         try {
+          console.log(`🚀 Starting AI processing at ${new Date().toISOString()}`);
           // Stream validation sub-steps while AI is processing
-          const processingPromise = projectValidationAgent.processUserInput(input, conversationState, false, debugCallback);
+          const processingPromise = projectValidationAgent.processUserInput(input, conversationState, false, debugCallback, performWebSearch)
+            .then(result => {
+              const completionTime = Date.now() - aiAnalysisStartTime;
+              console.log(`✅ PROCESSING PROMISE completed after ${completionTime}ms at ${new Date().toISOString()}`);
+              return result;
+            })
+            .catch(error => {
+              const errorTime = Date.now() - aiAnalysisStartTime;
+              console.log(`❌ PROCESSING PROMISE failed after ${errorTime}ms at ${new Date().toISOString()}: ${error.message}`);
+              throw error;
+            });
           
           // Start streaming validation sub-steps after a short delay (AI should be processing by then)
           setTimeout(async () => {
@@ -125,7 +185,9 @@ async function handleStreamingProcess(input: string, conversationState: Conversa
           
         } catch (timeoutError) {
           // If AI processing times out, use quick mode
-          console.log('AI processing timed out, using quick mode fallback');
+          const timeoutTime = Date.now();
+          const actualTimeoutDuration = timeoutTime - aiAnalysisStartTime;
+          console.log(`🚨 AI processing timed out after ${actualTimeoutDuration}ms (${(actualTimeoutDuration/1000).toFixed(2)}s) at ${new Date().toISOString()}, using quick mode fallback`);
           
           // Send fallback mode notification
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({
@@ -133,23 +195,23 @@ async function handleStreamingProcess(input: string, conversationState: Conversa
             category: 'fallback_mode',
             title: '⚡ Quick Mode Activated',
             details: {
-              reason: 'AI processing took longer than 60 seconds',
+              reason: `AI processing took longer than ${DEVELOPMENT_TIMEOUT/1000} seconds`,
               mode: 'Local keyword analysis + structured checklist',
               impact: 'Response generated instantly using built-in logic',
               quality: 'Good - still provides useful project guidance'
             }
           })}\n\n`));
           
-          result = await projectValidationAgent.processUserInput(input, conversationState, true, debugCallback);
+          result = await projectValidationAgent.processUserInput(input, conversationState, true, debugCallback, performWebSearch);
         }
         
         // Send final result
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({
           type: 'result',
           success: true,
-          message: result.response,
-          validation: result.validation,
-          conversationState: result.updatedState
+          message: (result as any).response,
+          validation: (result as any).validation,
+          conversationState: (result as any).updatedState
         })}\n\n`));
         
         controller.close();
@@ -180,39 +242,41 @@ async function handleStreamingProcess(input: string, conversationState: Conversa
             feedback: "I'm experiencing technical difficulties, but I can help you develop your project idea step by step.",
             completionChecklist: [
               {
-                category: "Project Scope",
+                category: "Product Vision",
                 items: [
-                  { task: "Define specific problem to solve", completed: false, priority: "high" },
-                  { task: "List key features and deliverables", completed: false, priority: "high" },
-                  { task: "Identify target users/beneficiaries", completed: false, priority: "medium" }
+                  { task: "Define the purpose for creating this product", completed: false, priority: "high" },
+                  { task: "Articulate the positive change it should bring", completed: false, priority: "high" },
+                  { task: "Clarify the overall vision and mission", completed: false, priority: "medium" }
                 ]
               },
               {
-                category: "Timeline & Planning",
+                category: "Target Market",
                 items: [
-                  { task: "Set project start date", completed: false, priority: "high" },
-                  { task: "Define project milestones", completed: false, priority: "high" },
-                  { task: "Estimate completion timeline", completed: false, priority: "high" }
+                  { task: "Identify target market segment", completed: false, priority: "high" },
+                  { task: "Define target customers and users", completed: false, priority: "high" },
+                  { task: "Understand market demographics and characteristics", completed: false, priority: "medium" }
                 ]
               },
               {
-                category: "Budget & Resources",
+                category: "Problem & Solution",
                 items: [
-                  { task: "Estimate total budget", completed: false, priority: "high" },
-                  { task: "Identify team size and skills needed", completed: false, priority: "high" },
-                  { task: "Plan resource allocation", completed: false, priority: "medium" }
+                  { task: "Define the specific problem the product solves", completed: false, priority: "high" },
+                  { task: "Identify benefits users will gain", completed: false, priority: "high" },
+                  { task: "Validate user needs and pain points", completed: false, priority: "medium" }
                 ]
               }
             ],
             nextSteps: [
-              "Start by defining the specific problem you want to solve",
-              "Outline the key deliverables and features",
-              "Set a realistic timeline with milestones"
+              "Define the purpose and vision for your product",
+              "Identify your target market and users",
+              "Clarify the problem you're solving and benefits you'll provide"
             ],
-            projectCriteria: {
-              scope: "Needs definition",
-              budget: "Not specified",
-              timeline: "Not specified"
+            productVisionCriteria: {
+              vision: "Needs definition",
+              targetGroup: "Not identified",
+              needs: "Not specified", 
+              product: "Not defined",
+              businessGoals: "Not specified"
             }
           },
           updatedState: conversationState
@@ -269,27 +333,34 @@ export async function POST(request: NextRequest) {
         }
 
         // Add timeout for non-streaming requests too
+        const startTime = Date.now();
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Request timeout after 60 seconds')), 60000);
+          setTimeout(() => {
+            console.log(`⏰ Non-streaming request timeout triggered after ${DEVELOPMENT_TIMEOUT/1000} seconds at ${new Date().toISOString()}`);
+            reject(new Error(`Request timeout after ${DEVELOPMENT_TIMEOUT/1000} seconds`));
+          }, DEVELOPMENT_TIMEOUT);
         });
         
         let result;
         try {
+          console.log(`🚀 Starting non-streaming AI processing at ${new Date().toISOString()}`);
           result = await Promise.race([
-            projectValidationAgent.processUserInput(input, conversationState),
+            projectValidationAgent.processUserInput(input, conversationState, false, undefined, performWebSearch),
             timeoutPromise
           ]);
         } catch (timeoutError) {
           // If AI processing times out, use quick mode
-          console.log('AI processing timed out, using quick mode fallback');
-          result = await projectValidationAgent.processUserInput(input, conversationState, true);
+          const timeoutTime = Date.now();
+          const actualTimeoutDuration = timeoutTime - startTime;
+          console.log(`🚨 Non-streaming AI processing timed out after ${actualTimeoutDuration}ms (${(actualTimeoutDuration/1000).toFixed(2)}s) at ${new Date().toISOString()}, using quick mode fallback`);
+          result = await projectValidationAgent.processUserInput(input, conversationState, true, undefined, performWebSearch);
         }
         
         return NextResponse.json({
           success: true,
-          message: result.response,
-          validation: result.validation,
-          conversationState: result.updatedState
+          message: (result as any).response,
+          validation: (result as any).validation,
+          conversationState: (result as any).updatedState
         });
 
       case 'validate':

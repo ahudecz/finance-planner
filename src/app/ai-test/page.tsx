@@ -80,6 +80,7 @@ export default function AITestPage() {
   const [debugLogs, setDebugLogs] = useState<DebugLogEntry[]>([]);
   const [showDebugPanel, setShowDebugPanel] = useState(true);
   const [currentFallbackMode, setCurrentFallbackMode] = useState<'quick' | 'error' | null>(null);
+  const [messageCounter, setMessageCounter] = useState(() => Math.floor(Math.random() * 1000));
   
   // TODO: REMOVE THIS STATE WHEN LANGCHAIN TEST BLOCK IS REMOVED
   // OpenAI Test State
@@ -98,7 +99,7 @@ export default function AITestPage() {
   // Helper function to add debug log entries
   const addDebugLog = (type: DebugLogEntry['type'], title: string, details: any, duration?: number) => {
     const logEntry: DebugLogEntry = {
-      id: `debug-${Date.now()}-${Math.random()}`,
+      id: `debug-${debugLogs.length}-${type}-${Date.now()}`,
       timestamp: new Date(),
       type,
       title,
@@ -120,11 +121,12 @@ export default function AITestPage() {
       
       if (data.success) {
         const welcomeMessage: ChatMessage = {
-          id: `welcome-${Date.now()}`,
+          id: `welcome-${messageCounter}`,
           type: 'welcome',
           content: data.message,
           timestamp: new Date()
         };
+        setMessageCounter(prev => prev + 1);
         
         setChatMessages([welcomeMessage]);
         setValidationState(prev => ({
@@ -141,11 +143,12 @@ export default function AITestPage() {
     if (!currentMessage.trim() || validationState.isLoading || !validationState.conversationState) return;
     
     const userMessage: ChatMessage = {
-      id: `user-${Date.now()}`,
+      id: `user-${messageCounter}`,
       type: 'user',
       content: currentMessage,
       timestamp: new Date()
     };
+    setMessageCounter(prev => prev + 1);
     
     setChatMessages(prev => [...prev, userMessage]);
     const messageToProcess = currentMessage;
@@ -162,6 +165,13 @@ export default function AITestPage() {
       conversationState: validationState.conversationState ? 'Present' : 'None'
     });
     
+    // Create AbortController with 160-second timeout (10 seconds longer than server timeout)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      console.log('⏰ Client-side timeout after 160 seconds, aborting fetch');
+      controller.abort();
+    }, 160000); // 160 seconds - longer than server timeout to allow server-side fallback
+
     try {
       const response = await fetch('/api/project-validation', {
         method: 'POST',
@@ -171,7 +181,8 @@ export default function AITestPage() {
           input: messageToProcess,
           conversationState: validationState.conversationState,
           stream: true
-        })
+        }),
+        signal: controller.signal
       });
 
       if (response.body) {
@@ -206,13 +217,14 @@ export default function AITestPage() {
                 } else if (data.type === 'analysis') {
                   // Handle analysis status message
                   const analysisMessage: ChatMessage = {
-                    id: `analysis-${Date.now()}`,
+                    id: `analysis-${messageCounter}`,
                     type: 'analysis',
                     content: data.content,
                     timestamp: new Date(),
                     status: 'in_progress',
                     analysisDetails: data.analysisDetails
                   };
+                  setMessageCounter(prev => prev + 1);
                   
                   setChatMessages(prev => [...prev, analysisMessage]);
                 } else if (data.type === 'debug') {
@@ -232,7 +244,7 @@ export default function AITestPage() {
                   
                   // Remove the analysis message and replace with final result
                   const aiMessage: ChatMessage = {
-                    id: `ai-${Date.now()}`,
+                    id: `ai-${chatMessages.length + 1}`,
                     type: data.validation ? 'validation' : 'ai',
                     content: data.message,
                     timestamp: new Date(),
@@ -279,7 +291,7 @@ export default function AITestPage() {
         
         if (data.success) {
           const aiMessage: ChatMessage = {
-            id: `ai-${Date.now()}`,
+            id: `ai-${chatMessages.length + 1}`,
             type: data.validation ? 'validation' : 'ai',
             content: data.message,
             timestamp: new Date(),
@@ -297,12 +309,18 @@ export default function AITestPage() {
           }));
         }
       }
+      
+      // Clear timeout on successful completion
+      clearTimeout(timeoutId);
     } catch (error) {
+      // Always clear the timeout on any error
+      clearTimeout(timeoutId);
+      
       console.error('Failed to process message:', error);
       setCurrentThinking(null);
       
       const errorMessage: ChatMessage = {
-        id: `error-${Date.now()}`,
+        id: `error-${chatMessages.length + 1}`,
         type: 'system',
         content: 'I encountered an error processing your message. Please try again.',
         timestamp: new Date(),
@@ -439,8 +457,8 @@ export default function AITestPage() {
                       {validationState.conversationState.companyInfo.employees && (
                         <span>👥 {validationState.conversationState.companyInfo.employees}</span>
                       )}
-                      {validationState.conversationState.companyInfo.revenue && (
-                        <span>💰 {validationState.conversationState.companyInfo.revenue}</span>
+                      {validationState.conversationState.companyInfo.nsv && (
+                        <span>💰 {validationState.conversationState.companyInfo.nsv}</span>
                       )}
                       {validationState.conversationState.companyInfo.country && (
                         <span>🌍 {validationState.conversationState.companyInfo.country}</span>
@@ -513,7 +531,7 @@ export default function AITestPage() {
                     LangChain ChatOpenAI Test
                   </h3>
                   <p className={clsx("text-sm", isDarkMode ? "text-gray-300" : "text-gray-600")}>
-                    Test LangChain's ChatOpenAI wrapper with o3-mini model
+                    Test LangChain&apos;s ChatOpenAI wrapper with o3-mini model
                   </p>
                 </div>
               </div>
@@ -646,7 +664,7 @@ export default function AITestPage() {
 
         {/* Main Interface with Debug Panel */}
         <div className={clsx(
-          "h-[calc(100vh-400px)] mx-auto flex gap-4",
+          "h-[calc(100vh-200px)] mx-auto flex gap-4",
           showDebugPanel ? "max-w-7xl" : "max-w-4xl"
         )}>
           {/* Chat Interface */}
@@ -778,6 +796,7 @@ export default function AITestPage() {
                             <ProjectValidationMessage 
                               validation={message.validation} 
                               isDarkMode={isDarkMode} 
+                              companyInfo={validationState.conversationState?.companyInfo}
                             />
                           )}
                         </div>

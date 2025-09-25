@@ -1,0 +1,12 @@
+{
+  "functions": {
+    "src/app/api/project-validation/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/*/route.ts": {
+      "maxDuration": 60
+    }
+  },
+  "regions": ["iad1"],
+  "framework": "nextjs"
+}
